@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg"
+    android:padding="12dp">
+
+    <!-- 第 1 行：四卡数据区（时长 / 已说句数 / 代词数 / 音量 dB）。M0 为静态骨架，真实数据后续批次接入 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:baselineAligned="false">
+
+        <LinearLayout style="@style/DataCard" android:layout_weight="1">
+            <TextView style="@style/CardLabel" android:text="时长" />
+            <TextView style="@style/CardValue" android:text="00:00" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/DataCard" android:layout_weight="1">
+            <TextView style="@style/CardLabel" android:text="已说句数" />
+            <TextView style="@style/CardValue" android:text="0" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/DataCard" android:layout_weight="1">
+            <TextView style="@style/CardLabel" android:text="代词数" />
+            <TextView style="@style/CardValue" android:text="0" />
+        </LinearLayout>
+
+        <!-- 分贝卡：深色 LCD 风格，绿字（M0 占位，阈值变色逻辑后续接入） -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.9"
+            android:layout_margin="4dp"
+            android:padding="10dp"
+            android:orientation="vertical"
+            android:background="@color/lcd_bg">
+            <TextView style="@style/CardLabel" android:text="音量 dB" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="--"
+                android:textColor="@color/accent"
+                android:textSize="44sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 文字区（M0 占位）。后续批次接入 ASR 文字 + 代词标红 + 波形 seek -->
+    <TextView
+        android:id="@+id/tvText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="大声说 · M0 空壳\n（四档 / 分贝 / 波形 / 判定 将在后续批次接入）"
+        android:textColor="@color/white"
+        android:textSize="22sp" />
+
+    <!-- 第 4 行：七键两组（操作组 停止/录音/播放 ＋ 入口组 历史/设置/模式） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <Button android:id="@+id/btnStop" style="@style/Btn" android:text="停止" />
+        <Button android:id="@+id/btnRec" style="@style/Btn" android:text="录音" />
+        <Button android:id="@+id/btnPlay" style="@style/Btn" android:text="播放" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <Button android:id="@+id/btnHistory" style="@style/Btn" android:text="历史" />
+        <Button android:id="@+id/btnSettings" style="@style/Btn" android:text="设置" />
+        <Button android:id="@+id/btnMode" style="@style/Btn" android:text="模式" />
+    </LinearLayout>
+
+</LinearLayout>

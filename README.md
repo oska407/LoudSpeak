@@ -61,3 +61,27 @@ git push -u origin main
 ```
 
 需要在 GitHub 先建一个**同名空仓库** `LoudSpeak`（不要勾选 README / .gitignore）。
+
+---
+
+## 构建与拿 APK（GitHub Actions 云端编译）
+
+仓库已配置 `.github/workflows/build.yml`：**push 到 `main` 自动编译 debug APK 并作为 Actions 产物上传**，不需要本地 Android Studio。
+
+1. 把代码 push 到 `oska407/LoudSpeak` 的 `main`（见上方「推送」）。
+2. 打开 GitHub → **Actions** → 找 `Build Debug APK` 这次运行 → 等变绿。
+3. 运行页底部 **Artifacts** → 下载 `loudspeak-debug-apk`（里面是 `app-debug.apk`）。
+4. 手机用浏览器 / 文件管理器装这个 apk 即可。
+
+> 首次编译会下载 Gradle 8.9 与 Android SDK 组件，约 3–8 分钟；之后有缓存会快很多。
+> 当前是 **M0 空壳**：只有 v6 布局骨架 + 七键占位（点按钮弹 Toast）。真实采集 / 转写 / 判定在后续批次接入。
+
+## 工程结构
+
+| 路径 | 内容 |
+|---|---|
+| `app/` | Android 工程（Kotlin + CameraX + ONNX Runtime Mobile） |
+| `app/src/main/res/layout/activity_main.xml` | v6 四卡数据区 + 七键底部栏骨架 |
+| `.github/workflows/build.yml` | 云端编译 debug APK |
+| `docs/` | 设计文案、评审、模型下载说明 |
+| `prototype/` | 界面样张 / 旧原型 |

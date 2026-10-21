@@ -1,0 +1,7 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.LoudSpeak" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/black</item>
+    </style>
+</resources>
