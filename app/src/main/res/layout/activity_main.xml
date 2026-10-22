@@ -17,17 +17,26 @@
             android:layout_weight="26"
             android:background="#000000">
 
-            <androidx.camera.view.PreviewView
-                android:id="@+id/previewView"
+            <!-- 取景窗口：内层比外框宽 16:9，左右平移挑一段竖条显示。
+                 人脸位置由 MainActivity 的肤色质心标定 / 手动拖动决定（见 FramingWindow）。 -->
+            <com.oska.loudspeak.FramingWindow
+                android:id="@+id/previewBox"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent" />
+                android:layout_height="match_parent">
 
-            <VideoView
-                android:id="@+id/videoView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
+                <androidx.camera.view.PreviewView
+                    android:id="@+id/previewView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
 
+                <VideoView
+                    android:id="@+id/videoView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone" />
+            </com.oska.loudspeak.FramingWindow>
+
+            <!-- 角标放在取景窗口外面，不参与平移 -->
             <TextView
                 android:id="@+id/tvModeBadge"
                 android:layout_width="wrap_content"
@@ -47,7 +56,7 @@
             android:layout_height="match_parent"
             android:background="#FF22303A" />
 
-        <!-- 右栏：四行 132/128/316/144 -->
+        <!-- 右栏：四行 142/128/306/144 -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -59,7 +68,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="132"
+                android:layout_weight="142"
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
@@ -110,7 +119,7 @@
                 android:id="@+id/textArea"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="316"
+                android:layout_weight="306"
                 android:layout_marginTop="4dp"
                 android:background="@color/card_bg"
                 android:fillViewport="true"

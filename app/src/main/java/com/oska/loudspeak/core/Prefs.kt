@@ -72,4 +72,15 @@ object Prefs {
     fun sessionsRoot(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/SpeakClear/sessions" }
             ?: "${ctx.filesDir.absolutePath}/SpeakClear/sessions"
+
+    /**
+     * 取景水平偏移：-1 = 露出画面最右一段，0 = 正中，+1 = 露出最左一段。
+     * 自动标定（画面里肤色质心）会写这里；用户手拖过就以手拖的为准，不再自动改。
+     */
+    fun cropBias(ctx: Context): Float = sp(ctx).getFloat("cropBias", 0f)
+    fun setCropBias(ctx: Context, v: Float, manual: Boolean = false) {
+        sp(ctx).edit().putFloat("cropBias", v.coerceIn(-1f, 1f)).putBoolean("cropBiasManual", manual).apply()
+    }
+    /** 用户是否手动拖过取景（拖过就不再自动标定） */
+    fun cropBiasManual(ctx: Context): Boolean = sp(ctx).getBoolean("cropBiasManual", false)
 }

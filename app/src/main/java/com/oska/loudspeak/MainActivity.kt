@@ -10,10 +10,9 @@ import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
-import android.util.Rational
+import android.text.style.RelativeSizeSpan
 import android.util.Size
 import android.view.MotionEvent
-import android.view.Surface
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
@@ -26,7 +25,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
-import androidx.camera.core.ViewPort
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
@@ -49,6 +47,7 @@ import com.oska.loudspeak.core.WaveformView
 import com.oska.loudspeak.core.Ui
 import java.io.File
 import java.util.concurrent.Executors
+import kotlin.math.abs
 
 /**
  * 主界面（§6 四行布局 + §12 交互流程）。
@@ -71,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var previewView: PreviewView
+    private lateinit var previewBox: FramingWindow
     private lateinit var videoView: VideoView
     private lateinit var leftPanel: FrameLayout
     private lateinit var tvModeBadge: TextView
@@ -142,6 +142,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         previewView = findViewById(R.id.previewView)
+        previewBox = findViewById(R.id.previewBox)
         videoView = findViewById(R.id.videoView)
         leftPanel = findViewById(R.id.leftPanel)
         tvModeBadge = findViewById(R.id.tvModeBadge)
@@ -175,6 +176,12 @@ class MainActivity : AppCompatActivity() {
         btnHistory.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         btnMode.setOnClickListener { startActivity(Intent(this, ModeSelectActivity::class.java)) }
+
+        // 取景：用 TextureView 模式 —— 取景窗口要平移 PreviewView，SurfaceView 在部分机型上
+        // 平移/裁剪不生效（会漏出窗口外的东西），TextureView 没有这个毛病。
+        previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        previewBox.bias = Prefs.cropBias(this)
+        setupPreviewDrag()
 
         // 长按停止 2 秒 = 情绪退出（§12.5）
         // ⚠️ 必须用专用 Runnable 取消：早先用的 removeCallbacksAndMessages(null)
@@ -382,6 +389,85 @@ class MainActivity : AppCompatActivity() {
         updateButtons()
     }
 
+    // ================= 取景（人脸居中） =================
+
+    private var dragStartX = 0f
+    private var dragStartBias = 0f
+    private var biasHintShown = false
+    private val resetBias = Runnable {
+        Prefs.setCropBias(this, 0f, manual = false)
+        previewBox.bias = 0f
+        autoFrame()
+        Toast.makeText(this, "取景已恢复自动", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * 画面可以左右拖：拖到哪就记住哪（下次进来还是这个位置）。
+     * 长按 0.9 秒彻底复位回「自动标定」。
+     *
+     * ⚠️ ACTION_DOWN 必须返回 true，否则系统认为没人要这个手势，后面的 MOVE 根本收不到；
+     * 也正因为吞了事件，长按不能用 setOnLongClickListener（它要求 View 自己处理 touch），
+     * 只能在这里用定时器自己做。
+     */
+    private fun setupPreviewDrag() {
+        previewBox.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragStartX = e.rawX
+                    dragStartBias = previewBox.bias
+                    main.removeCallbacks(resetBias)
+                    main.postDelayed(resetBias, 900)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val half = previewBox.slack() / 2f
+                    if (abs(e.rawX - dragStartX) > 12f) main.removeCallbacks(resetBias)
+                    if (half > 1f) {
+                        // 手指往右 → 画面跟着往右 → 露出更左边的一段
+                        previewBox.bias = dragStartBias + (e.rawX - dragStartX) / half
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    main.removeCallbacks(resetBias)
+                    if (abs(previewBox.bias - dragStartBias) > 0.02f) {
+                        Prefs.setCropBias(this, previewBox.bias, manual = true)
+                        if (!biasHintShown) {
+                            biasHintShown = true
+                            Toast.makeText(this, "取景位置已记住（长按画面恢复自动）", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
+    /**
+     * 自动标定取景偏移：抓一帧，按肤色质心找脸的位置，把取景窗口平移过去让脸居中。
+     * 连做 3 次（每次间隔递增）收敛一下，仍判不出来就保持不动 —— 不猜。
+     */
+    private fun autoFrame(attempt: Int = 0) {
+        if (Prefs.cropBiasManual(this)) return
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val bmp = try { previewView.bitmap } catch (e: Exception) { null }
+            val fx = bmp?.let { FaceFramer.skinCenterX(it) }
+            if (fx != null && previewBox.slack() > 8) {
+                val tw = previewBox.childWidth().toFloat()
+                val cw = previewBox.width.toFloat()
+                val sl = previewBox.slack().toFloat()
+                // 让质心落在窗口正中
+                val x0 = (fx * tw - cw / 2f).coerceIn(0f, sl)
+                val b = (1f - 2f * x0 / sl).coerceIn(-1f, 1f)
+                previewBox.bias = b
+                Prefs.setCropBias(this, b)
+            }
+            if (attempt < 2) autoFrame(attempt + 1)
+        }, 900L + attempt * 500L)
+    }
+
     private fun bindCamera(record: Boolean) {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
@@ -389,30 +475,9 @@ class MainActivity : AppCompatActivity() {
                 val provider = future.get()
                 cameraProvider = provider
                 provider.unbindAll()
-
-                // 方案一：ViewPort + 显式分辨率（设计要的「预览与录制共用同一 3:4 中间竖条」）。
-                // 部分机型上 ViewPort 与 setTargetResolution 不能共存，会直接抛异常；
-                // 失败就退到方案二，保证「至少有画面」，不让整个 app 变砖。
-                var fisrtError: Throwable? = null
-                val ok = try {
-                    bindOnce(provider, record, withViewPort = true); true
-                } catch (e: Exception) {
-                    fisrtError = e
-                    try { provider.unbindAll() } catch (_: Exception) {}
-                    false
-                }
-                if (!ok) {
-                    try {
-                        bindOnce(provider, record, withViewPort = false)
-                        CrashReporter.report("warn",
-                            "相机已降级绑定（无 ViewPort，靠 PreviewView FILL_CENTER 裁中间）：${fisrtError?.message?.take(120)}")
-                    } catch (e2: Exception) {
-                        CrashReporter.report("error", "相机绑定失败 mode=$mode（两种方案都失败）", e2)
-                        Toast.makeText(this, "相机启动失败：${e2.message}", Toast.LENGTH_SHORT).show()
-                        return@addListener
-                    }
-                }
+                bindOnce(provider, record)
                 if (record) startVideoSegment()
+                autoFrame()      // 相机起来后自动把脸摆到中间
             } catch (e: Exception) {
                 CrashReporter.report("error", "相机绑定失败 mode=$mode", e)
                 Toast.makeText(this, "相机启动失败：${e.message}", Toast.LENGTH_SHORT).show()
@@ -420,26 +485,27 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    /** 绑定一次相机。withViewPort=true 走设计的主方案；false 为降级方案（由 PreviewView 自己裁中间）。 */
-    private fun bindOnce(provider: ProcessCameraProvider, record: Boolean, withViewPort: Boolean) {
-        val previewBuilder = Preview.Builder()
-        // 有 ViewPort 时不要再设分辨率（两者叠加在部分机型/版本上会互相顶掉）；
-        // 降级方案里用它把预览拉到 16:9，再让 PreviewView 的 FILL_CENTER 裁中间竖条。
-        if (!withViewPort) previewBuilder.setTargetResolution(Size(1280, 720))
-        val preview = previewBuilder.build()
+    /**
+     * 绑定一次相机。
+     *
+     * ⚠️ 这里**不再用 ViewPort**。原来的 ViewPort(3:4) 会把画面裁到只剩一条竖条，
+     * 之后 PreviewView 再填满窄窄的左栏，可左右挪的余量只剩 ±60px（≈±14%），
+     * 根本不够把偏到一边的脸拉回中间。现在预览按 16:9 全幅给出，
+     * 由 FramingWindow 在一个比外框宽一倍多的画幅里平移挑窗口 ——
+     * 可挪余量 ±430px（≈±100%），够用了。录制也随之为 1280×720 全幅。
+     */
+    private fun bindOnce(provider: ProcessCameraProvider, record: Boolean) {
+        // 预览固定 16:9 / 1280×720：FramingWindow 的内层按 16:9 撑开，
+        // 尺寸对不上就会上下把头顶裁掉。
+        @Suppress("DEPRECATION")
+        val preview = Preview.Builder().setTargetResolution(Size(1280, 720)).build()
         preview.setSurfaceProvider(previewView.surfaceProvider)
-        var groupBuilder = UseCaseGroup.Builder().addUseCase(preview)
-        if (withViewPort) {
-            groupBuilder = groupBuilder.setViewPort(
-                ViewPort.Builder(android.util.Rational(3, 4), Surface.ROTATION_0)
-                    .setLayoutDirection(View.LAYOUT_DIRECTION_LTR).build()
-            )
-        }
+        val group = UseCaseGroup.Builder().addUseCase(preview)
         if (record) {
             // ⚠️ 绝对不能用 VideoCapture.Builder.setTargetResolution()：
             // 它是 @RestrictTo(LIBRARY_GROUP) 的死 API，调用即抛
             // UnsupportedOperationException("setTargetResolution is not supported.")。
-            // 录制分辨率只能通过 Recorder 的 QualitySelector 指定，3:4 裁切由 ViewPort 统一保证。
+            // 录制分辨率只能通过 Recorder 的 QualitySelector 指定。
             val recorder = Recorder.Builder()
                 .setQualitySelector(
                     QualitySelector.from(
@@ -450,9 +516,9 @@ class MainActivity : AppCompatActivity() {
                 .build()
             val vc = VideoCapture.Builder(recorder).build()
             videoCapture = vc
-            groupBuilder = groupBuilder.addUseCase(vc)
+            group.addUseCase(vc)
         }
-        provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, groupBuilder.build())
+        provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, group.build())
     }
 
     private fun unbindCamera() {
@@ -487,8 +553,7 @@ class MainActivity : AppCompatActivity() {
         RuleEngine.evaluate(listOf(s), l4Enabled = false)   // 实时只做 L1（§8.6 起点只开 L1）
         sentences.add(s)
         renderAll()
-        tvSentCount.text = sentences.count { !it.uncertain }.toString()
-        tvPronCount.text = sentences.sumOf { it.pronouns.size }.toString()
+        updateCounters()
 
         // 红晕（§7.1）：命中代词 + 防抖 + 录制中 + 未静默
         if (state == "recording" && s.pronouns.isNotEmpty() && Prefs.glowMode(this) == 0) {
@@ -533,7 +598,9 @@ class MainActivity : AppCompatActivity() {
                 sb.append("〔${s.flags.joinToString("·")}〕")
                 sb.setSpan(ForegroundColorSpan(0xFFFFB74D.toInt()), ps, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            sb.append("\n")
+            // 句子之间**不硬换行**：连续从左往右排，排满一行由排版自己折行（像书写，§6 修订）。
+            // 原来每句补一个 "\n"，短句各占一行，右边半屏全空，读起来像清单不像话。
+            sb.append(" ")
         }
         if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
         textArea.setContent(sb)
@@ -543,6 +610,22 @@ class MainActivity : AppCompatActivity() {
         val st = sb.length
         sb.append("\n──── ").append(chapter.toString()).append(":00 ────\n")
         sb.setSpan(ForegroundColorSpan(0xFF37474F.toInt()), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** 「整句」卡显示 说得完整的句数 / 总句数，后面那半用小一号灰字 */
+    private fun updateCounters() {
+        val ok = sentences.count { !it.uncertain }
+        val total = sentences.size
+        val sb = SpannableStringBuilder()
+        sb.append(ok.toString())
+        if (total > 0) {
+            val st = sb.length
+            sb.append("/").append(total.toString())
+            sb.setSpan(RelativeSizeSpan(0.58f), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(ForegroundColorSpan(0xFF9AA7B0.toInt()), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        tvSentCount.text = sb
+        tvPronCount.text = sentences.sumOf { it.pronouns.size }.toString()
     }
 
     // ================= 暂停 / 停止（§12.2 步 6–7） =================
@@ -751,8 +834,7 @@ class MainActivity : AppCompatActivity() {
                     setOnClickListener {
                         s.selfMarked = true     // §9.1：只做标注，从「不完整」计数移除
                         row.visibility = View.GONE
-                        tvSentCount.text = sentences.count { !it.uncertain }.toString()
-                        tvPronCount.text = sentences.sumOf { it.pronouns.size }.toString()
+                        updateCounters()
                         renderAll()
                     }
                 }
