@@ -54,8 +54,13 @@ object Prefs {
             enabled = annotEnabled(ctx),
             pronouns = annotPronouns(ctx),
             fillers = annotFillers(ctx),
-            issues = annotIssues(ctx)
+            issues = annotIssues(ctx),
+            muzzy = annotMuzzy(ctx)
         )
+
+    /** 模糊词标注（跟 L2 一起开，默认关） */
+    fun annotMuzzy(ctx: Context): Boolean = sp(ctx).getBoolean("annotMuzzy", false)
+    fun setAnnotMuzzy(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotMuzzy", v).apply()
 
     /** 第 N 次会话计数（所有档位都计，§12.0） */
     fun sessionCount(ctx: Context): Int = sp(ctx).getInt("sessionCount", 0)
@@ -95,10 +100,55 @@ object Prefs {
     fun llmEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("llmEnabled", false)
     fun setLlmEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("llmEnabled", v).apply()
 
-    /** 会话根目录（app 外部私有，免权限写入；文件管理器/USB 可访问） */
-    fun sessionsRoot(ctx: Context): String =
+    // ================= 存储位置（§11.1：可改地址，只影响新会话） =================
+
+    /** 默认会话根目录（app 外部私有，免权限写入；文件管理器/USB 可访问） */
+    fun defaultSessionsRoot(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/SpeakClear/sessions" }
             ?: "${ctx.filesDir.absolutePath}/SpeakClear/sessions"
+
+    /**
+     * 自定义会话目录（空 = 用默认）。
+     * 只在用户于设置页主动改过之后才有值；改完**只影响新会话**，
+     * 老记录留在原处不会被悄悄搬走（§11.1），要搬得点「迁移已有记录」。
+     */
+    fun sessionsRootCustom(ctx: Context): String = sp(ctx).getString("sessionsRootCustom", "") ?: ""
+    fun setSessionsRootCustom(ctx: Context, path: String) =
+        sp(ctx).edit().putString("sessionsRootCustom", path.trim()).apply()
+
+    /** 会话根目录：有自定义就用自定义，否则默认 */
+    fun sessionsRoot(ctx: Context): String =
+        sessionsRootCustom(ctx).ifBlank { defaultSessionsRoot(ctx) }
+
+    // ================= 保留策略（§11.5 / E1 / E4） =================
+
+    /** 会话保留提示天数，默认 30；超了**只提示不自动删**（E3） */
+    fun retentionDays(ctx: Context): Int = sp(ctx).getInt("retentionDays", 30)
+    fun setRetentionDays(ctx: Context, v: Int) = sp(ctx).edit().putInt("retentionDays", v.coerceIn(7, 365)).apply()
+
+    /** 会话占用提示阈值（GB），默认 10；同样只提示不自动删 */
+    fun retentionGb(ctx: Context): Int = sp(ctx).getInt("retentionGb", 10)
+    fun setRetentionGb(ctx: Context, v: Int) = sp(ctx).edit().putInt("retentionGb", v.coerceIn(1, 128)).apply()
+
+    /** 回收站保留天数，固定 7（E1），不放到设置里让孩子改 */
+    val TRASH_KEEP_DAYS = 7
+
+    /** 删除时「只删视频、保留转写文字」（§11.4 E2），默认关 */
+    fun keepTextOnDelete(ctx: Context): Boolean = sp(ctx).getBoolean("keepTextOnDelete", false)
+    fun setKeepTextOnDelete(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("keepTextOnDelete", v).apply()
+
+    // ================= 分级节奏（§8.6） =================
+
+    /**
+     * 级别覆盖：0 = 自动（按第 N 次会话递进）；1..5 = 手动锁定到该级。
+     * 给家长留一个「孩子已经能做到，别再等次数」的出口，也方便真机验证各级判定。
+     */
+    fun levelOverride(ctx: Context): Int = sp(ctx).getInt("levelOverride", 0)
+    fun setLevelOverride(ctx: Context, v: Int) = sp(ctx).edit().putInt("levelOverride", v.coerceIn(0, 5)).apply()
+
+    /** L2 模糊词总开关（D3：默认关闭，第 9 次会话起才自动开） */
+    fun muzzyEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("muzzyEnabled", true)
+    fun setMuzzyEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("muzzyEnabled", v).apply()
 
     /**
      * 取景水平偏移：**按屏幕朝向分别存**（Surface.ROTATION_0/90/180/270）。

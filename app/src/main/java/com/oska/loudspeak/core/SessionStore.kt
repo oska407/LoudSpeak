@@ -15,23 +15,37 @@ import java.io.File
  * - SQLite 索引表（§10.4）供历史列表快速加载
  * - 软删除：移入同根 .trash/，路径安全校验（只删本 App 写过的会话目录）
  */
-class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.db", null, 1) {
+class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(
             sessionId TEXT PRIMARY KEY, startedAt INTEGER, durationMs INTEGER,
             pronounCount INTEGER, completeCount INTEGER, incompleteCount INTEGER,
-            selfMarkedCount INTEGER, exitKind TEXT, dirPath TEXT)""")
+            selfMarkedCount INTEGER, exitKind TEXT, dirPath TEXT,
+            star INTEGER NOT NULL DEFAULT 0)""")
     }
-    override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {}
+
+    /** v1 → v2：补「星标」列（§11.2 可标重点，便于回看） */
+    override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
+        if (o < 2) try {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN star INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) { /* 已经加过了就不管 */ }
+    }
 
     private fun root(): String = Prefs.sessionsRoot(ctx)
 
     class Record(
         val sessionId: String, val startedAt: Long, val durationMs: Long,
         val pronounCount: Int, val completeCount: Int, val incompleteCount: Int,
-        val selfMarkedCount: Int, val exitKind: String, val dirPath: String
+        val selfMarkedCount: Int, val exitKind: String, val dirPath: String,
+        val star: Boolean = false
     )
+
+    /** 历史排序（§11.2 E5）：0 时间倒序 / 1 不完整句最多优先 */
+    companion object {
+        const val ORDER_TIME = 0
+        const val ORDER_INCOMPLETE = 1
+    }
 
     /**
      * 新建会话目录（仅 ①② 档调用；③④ 档不建 §10.1）。
@@ -95,6 +109,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 .put("text", if (s.uncertain) "?" else s.text)
                 .put("words", JSONArray())
                 .put("pronouns", JSONArray().apply { s.pronouns.forEach { put(JSONObject().put("word", it.first).put("at", it.second)) } })
+                .put("muzzy", JSONArray().apply { s.muzzy.forEach { put(JSONObject().put("word", it.first).put("at", it.second)) } })
                 .put("flags", JSONArray().apply { s.flags.forEach { put(it) } })
                 .put("judge", s.judge ?: JSONObject.NULL)
                 .put("selfMarked", s.selfMarked)
@@ -111,19 +126,48 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             put("pronounCount", r.pronounCount); put("completeCount", r.completeCount)
             put("incompleteCount", r.incompleteCount); put("selfMarkedCount", r.selfMarkedCount)
             put("exitKind", r.exitKind); put("dirPath", r.dirPath)
+            put("star", if (r.star) 1 else 0)
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    /** 历史列表（时间倒序） */
-    fun listSessions(): List<Record> {
+    /**
+     * 历史列表（§11.2）。
+     * @param order ORDER_TIME 时间倒序 / ORDER_INCOMPLETE 不完整句最多优先
+     * @param onlyStar 只看星标
+     * @param sinceMs / untilMs 日期范围（0 = 不限）
+     */
+    fun listSessions(
+        order: Int = ORDER_TIME,
+        onlyStar: Boolean = false,
+        sinceMs: Long = 0L,
+        untilMs: Long = 0L
+    ): List<Record> {
+        val where = StringBuilder()
+        val args = ArrayList<String>()
+        if (onlyStar) where.append("star=1")
+        if (sinceMs > 0) { if (where.isNotEmpty()) where.append(" AND "); where.append("startedAt>=?"); args.add(sinceMs.toString()) }
+        if (untilMs > 0) { if (where.isNotEmpty()) where.append(" AND "); where.append("startedAt<=?"); args.add(untilMs.toString()) }
+        val sql = "SELECT sessionId,startedAt,durationMs,pronounCount,completeCount,incompleteCount," +
+                "selfMarkedCount,exitKind,dirPath,star FROM sessions" +
+                (if (where.isNotEmpty()) " WHERE $where" else "") +
+                when (order) {
+                    ORDER_INCOMPLETE -> " ORDER BY incompleteCount DESC, startedAt DESC"
+                    else -> " ORDER BY startedAt DESC"
+                }
         val out = ArrayList<Record>()
-        readableDatabase.rawQuery("SELECT * FROM sessions ORDER BY startedAt DESC", null).use { c ->
+        readableDatabase.rawQuery(sql, if (args.isEmpty()) null else args.toTypedArray()).use { c ->
             while (c.moveToNext()) {
                 out.add(Record(c.getString(0), c.getLong(1), c.getLong(2), c.getInt(3), c.getInt(4),
-                    c.getInt(5), c.getInt(6), c.getString(7), c.getString(8)))
+                    c.getInt(5), c.getInt(6), c.getString(7), c.getString(8), c.getInt(9) == 1))
             }
         }
         return out
+    }
+
+    /** 星标（§11.2 / §11.3）：标记重点，便于回看 */
+    fun setStar(sessionId: String, star: Boolean) {
+        writableDatabase.execSQL("UPDATE sessions SET star=? WHERE sessionId=?",
+            arrayOf(if (star) 1 else 0, sessionId))
     }
 
     /**
@@ -155,6 +199,11 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 }
                 val fl = o.optJSONArray("flags")
                 if (fl != null) for (j in 0 until fl.length()) s.flags.add(fl.getString(j))
+                val mz = o.optJSONArray("muzzy")
+                if (mz != null) for (j in 0 until mz.length()) {
+                    val p = mz.getJSONObject(j)
+                    s.muzzy.add(p.optString("word") to p.optInt("at"))
+                }
                 out.add(s)
             }
             out
@@ -164,8 +213,11 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
     /**
      * 软删除（§11.4）：路径安全校验（必须位于 sessions 根内）+ meta 白名单校验，
      * 通过后移入 <root>/.trash/。返回 null=成功，否则错误文案。
+     *
+     * keepText（§11.4 E2）：只删视频、留下转写文字。视频约 5.3MB/分钟，文字才几十 KB，
+     * 有长期价值 —— 所以这条是可选项，默认关。
      */
-    fun softDelete(sessionId: String): String? {
+    fun softDelete(sessionId: String, keepText: Boolean = Prefs.keepTextOnDelete(ctx)): String? {
         val rootF = File(root()).canonicalFile
         val dir = File(rootF, sessionId).canonicalFile
         if (!dir.path.startsWith(rootF.path)) return "路径校验失败（不在 sessions 内）"
@@ -177,11 +229,102 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             val o = JSONObject(meta.readText())
             if (o.optString("sessionId") != sessionId) return "白名单校验失败（sessionId 不一致）"
         } catch (e: Exception) { return "meta.json 解析失败" }
+        if (keepText) {
+            // 只删画面/声音，transcript/meta 留着；标注一点不丢
+            dir.listFiles { f: File -> f.isFile && (f.name.endsWith(".mp4") || f.name.endsWith(".wav")) }
+                ?.forEach { it.delete() }
+        }
+        val star = try {
+            readableDatabase.rawQuery("SELECT star FROM sessions WHERE sessionId=?", arrayOf(sessionId)).use {
+                if (it.moveToFirst()) it.getInt(0) == 1 else false
+            }
+        } catch (_: Exception) { false }
         val trash = File(rootF, ".trash/${sessionId}-${System.currentTimeMillis()}")
         if (!dir.renameTo(trash)) return "移动到回收站失败"
+        // 星标写进 meta，回收站里恢复回来还认得（DB 行会删掉）
+        try {
+            val mf = File(trash, "meta.json")
+            val o = JSONObject(mf.readText()).put("star", star)
+            mf.writeText(o.toString(2))
+        } catch (_: Exception) {}
         writableDatabase.delete("sessions", "sessionId=?", arrayOf(sessionId))
         return null
     }
+
+    /**
+     * 迁移已有记录到新目录（§11.1「提供迁移已有记录按钮」）。
+     * 规则：用户主动触发才搬；搬完才把设置切过去；跨分区 rename 失败时退化为复制+删除。
+     * @return 成功条数 to 错误文案（null = 没问题）
+     */
+    fun migrateTo(newRootPath: String): Pair<Int, String?> {
+        val src = File(root()).canonicalFile
+        val dst = File(newRootPath).canonicalFile
+        if (src.path == dst.path) return 0 to "新目录和当前目录是同一个"
+        val r = moveChildren(src, dst)
+        if (r.first > 0) storeRoot(dst.absolutePath)
+        return r
+    }
+
+    /** 把某个旧目录里的记录搬进当前目录（默认目录 → 自定义目录时用） */
+    fun migrateFrom(srcRootPath: String): Pair<Int, String?> =
+        moveChildren(File(srcRootPath).canonicalFile, File(root()).canonicalFile)
+
+    private fun moveChildren(src: File, dst: File): Pair<Int, String?> {
+        if (src.path == dst.path) return 0 to "两个目录相同"
+        try {
+            dst.mkdirs()
+            val probe = File(dst, ".probe")
+            probe.writeText("ok"); probe.delete()
+        } catch (e: Exception) {
+            return 0 to "目标目录不可写：${e.message?.take(60)}"
+        }
+        if (!src.isDirectory) return 0 to null
+        var n = 0
+        var firstErr: String? = null
+        src.listFiles()?.forEach { child ->
+            val target = File(dst, child.name)
+            if (target.exists()) return@forEach
+            val ok = if (child.renameTo(target)) true else runCatching {
+                child.copyRecursively(target, overwrite = true); child.deleteRecursively()
+            }.getOrDefault(false)
+            if (ok) {
+                n++
+                // 索引里的绝对路径必须跟着改，否则「查看」会找不到文件
+                if (child.isDirectory && child.name != ".trash") {
+                    try {
+                        writableDatabase.execSQL("UPDATE sessions SET dirPath=? WHERE sessionId=?",
+                            arrayOf(target.absolutePath, child.name))
+                    } catch (_: Exception) {}
+                }
+            } else if (firstErr == null) firstErr = "「${child.name}」没搬过去"
+        }
+        return n to firstErr
+    }
+
+    /** 把会话根切到新目录（不搬文件，只影响新会话）。§11.1 */
+    fun switchRoot(newRootPath: String) {
+        storeRoot(newRootPath)
+        File(newRootPath).mkdirs()
+    }
+
+    /**
+     * 落「自定义目录」这个设置。如果选的其实就是默认目录，就清空成「默认」，
+     * 免得界面上明明用的默认目录、却标着「自定义」。
+     */
+    private fun storeRoot(path: String) {
+        val def = runCatching { File(Prefs.defaultSessionsRoot(ctx)).canonicalPath }.getOrDefault("")
+        val p = runCatching { File(path).canonicalPath }.getOrDefault(path)
+        Prefs.setSessionsRootCustom(ctx, if (p == def) "" else p)
+    }
+
+    /** 目录可写吗（新建 + 试写一个探针文件），切换存放位置前必查 */
+    fun canWrite(path: String): String? = try {
+        val d = File(path)
+        d.mkdirs()
+        val p = File(d, ".probe")
+        p.writeText("ok"); p.delete()
+        null
+    } catch (e: Exception) { e.message?.take(80) ?: "不可写" }
 
     /** 目录占用（字节）。§11.5：占用是「会话 + 回收站」一起算 */
     fun dirSizeBytes(f: File): Long = try {
@@ -195,12 +338,12 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
     /** 最旧的 N 条（§11.5 清理建议：列出供勾选，不替用户决定删哪些） */
     fun oldestSessions(n: Int): List<Record> = listSessions().sortedBy { it.startedAt }.take(n)
 
-    /** 清理回收站中 7 天前的目录（§11.4，每日首次启动时调用） */
+    /** 清理回收站中过期目录（§11.4 E1：默认 7 天，每日首次启动时调用） */
     fun cleanTrash() {
         val trash = File(root(), ".trash")
-        val week = 7L * 24 * 3600 * 1000
+        val keep = Prefs.TRASH_KEEP_DAYS * 24L * 3600 * 1000
         trash.listFiles()?.forEach {
-            if (it.lastModified() + week < System.currentTimeMillis()) it.deleteRecursively()
+            if (it.lastModified() + keep < System.currentTimeMillis()) it.deleteRecursively()
         }
     }
 
@@ -236,7 +379,8 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                         o.getJSONObject("stats").optInt("completeCount"),
                         o.getJSONObject("stats").optInt("incompleteCount"),
                         o.getJSONObject("stats").optInt("selfMarkedCount"),
-                        o.optString("exitKind", "normal"), target.absolutePath))
+                        o.optString("exitKind", "normal"), target.absolutePath,
+                        o.optBoolean("star", false)))
                 }
                 null
             }

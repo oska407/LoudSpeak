@@ -24,6 +24,7 @@ object Annotator {
     val C_FILLER  = 0xFF7C8B96.toInt()   // 口头禅：灰蓝（弱化）
     val C_UNCLEAR = 0xFF6E7B84.toInt()   // 不清：中性灰
     val C_ISSUE   = 0xFFFFB74D.toInt()   // 句式问题：琥珀橙
+    val C_MUZZY   = 0xFFE8A33D.toInt()   // 模糊词（L2）：暗金（比问题橙弱一档，不抢眼）
     val C_SELF    = 0xFF6E7B84.toInt()   // 自评：中性灰
 
     /** 生成标注图例（设置页「标注图例」按钮用） */
@@ -33,6 +34,8 @@ object Annotator {
         append("    要改成具体名字，比如「这个三角形」→「红色的三角形」\n\n")
         append("🩶 灰字 + 删除线 ＝ 口头禅（嗯/啊/呃…）\n")
         append("    能省就省，让话更干净\n\n")
+        append("🟠 暗金 + 下划线 ＝ 模糊词（东西/玩意儿…，第 9 次会话后才开）\n")
+        append("    它等于没说，换成具体名字\n\n")
         append("❓ 灰色「?」＝ 没听清（识别不到）\n\n")
         append("⚠ 橙色「⚠ 标签」＝ 句子不完整（缺主体/半截句/要素缺失）\n\n")
         append("灰色「〔已自评〕」＝ 你自己标了「这句我没说清楚」")
@@ -70,23 +73,32 @@ object Annotator {
                 sb.append("?")
                 sb.setSpan(ForegroundColorSpan(C_UNCLEAR), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             } else {
-                // 代词与口头禅按位置合并，避免重叠互相覆盖
+                // 代词 / 口头禅 / 模糊词 按位置合并，避免重叠互相覆盖
                 val pron = if (prefs.pronouns) RuleEngine.matchPronouns(s.text) else emptyList()
                 val fill = if (prefs.fillers) RuleEngine.matchFillers(s.text) else emptyList()
-                val marks = (pron.map { Mark(it.first, it.second, true) } +
-                        fill.map { Mark(it.first, it.second, false) })
+                val muzz = if (prefs.muzzy) RuleEngine.matchMuzzy(s.text) else emptyList()
+                val marks = (pron.map { Mark(it.first, it.second, Mark.PRONOUN) } +
+                        fill.map { Mark(it.first, it.second, Mark.FILLER) } +
+                        muzz.map { Mark(it.first, it.second, Mark.MUZZY) })
                     .sortedBy { it.pos }
                 var idx = 0
                 for (m in marks) {
                     if (m.pos > idx) sb.append(s.text.substring(idx, m.pos))
                     val st = sb.length
                     sb.append(m.word)
-                    if (m.isPronoun) {
-                        sb.setSpan(ForegroundColorSpan(C_PRONOUN), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    } else {
-                        sb.setSpan(ForegroundColorSpan(C_FILLER), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        sb.setSpan(StrikethroughSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    when (m.kind) {
+                        Mark.PRONOUN -> {
+                            sb.setSpan(ForegroundColorSpan(C_PRONOUN), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                        Mark.MUZZY -> {
+                            sb.setSpan(ForegroundColorSpan(C_MUZZY), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                        else -> {
+                            sb.setSpan(ForegroundColorSpan(C_FILLER), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            sb.setSpan(StrikethroughSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
                     }
                     idx = m.pos + m.word.length
                 }
@@ -112,16 +124,20 @@ object Annotator {
     fun summary(sentences: List<RuleEngine.Sentence>): String {
         val pron = sentences.sumOf { it.pronouns.size }
         val fill = sentences.sumOf { it.fillers.size }
+        val muzz = sentences.sumOf { it.muzzy.size }
         val incomplete = sentences.count { it.isProblem && it.pronouns.isEmpty() }
         val parts = mutableListOf<String>()
         if (pron > 0) parts.add("代词 $pron 处")
+        if (muzz > 0) parts.add("模糊词 $muzz 处")
         if (fill > 0) parts.add("口头禅 $fill 处")
         if (incomplete > 0) parts.add("不完整句 $incomplete 句")
         return if (parts.isEmpty()) "这段讲得很清楚，没有要改的地方。"
         else "本场要改：${parts.joinToString("，")}。"
     }
 
-    private data class Mark(val word: String, val pos: Int, val isPronoun: Boolean)
+    private class Mark(val word: String, val pos: Int, val kind: Int) {
+        companion object { const val PRONOUN = 0; const val FILLER = 1; const val MUZZY = 2 }
+    }
 
     private fun appendSep(sb: SpannableStringBuilder, chapter: Int) {
         val st = sb.length
@@ -135,5 +151,7 @@ data class AnnotationPrefs(
     val enabled: Boolean,
     val pronouns: Boolean,
     val fillers: Boolean,
-    val issues: Boolean
+    val issues: Boolean,
+    /** 模糊词（东西/玩意儿…）：L2，默认关闭，第 9 次会话起才开 */
+    val muzzy: Boolean = false
 )

@@ -42,7 +42,10 @@ class SessionViewActivity : AppCompatActivity() {
             setBackgroundColor(0xFF101418.toInt())
         }
 
-        val dir = File(Prefs.sessionsRoot(this), sessionId)
+        // 优先用历史列表传过来的真实目录：改过存放位置后，老记录可能还在旧目录里，
+        // 只按「当前根 + sessionId」拼会找不到文件。
+        val dir = intent.getStringExtra("dirPath")?.let { File(it) }?.takeIf { it.isDirectory }
+            ?: File(Prefs.sessionsRoot(this), sessionId)
         val meta = try {
             org.json.JSONObject(File(dir, "meta.json").readText())
         } catch (_: Exception) { null }

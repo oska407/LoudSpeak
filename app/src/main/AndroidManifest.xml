@@ -55,11 +55,13 @@
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
-        <!-- 设置页（分贝阈值 / 断句 / 红晕 / 模型） -->
+        <!-- 设置页（分贝阈值 / 断句 / 红晕 / 标注 / 分级 / 模型 / 存储）
+             ⚠️ 竖版：主界面是四行平铺的工作台必须横屏，设置是「一页读下来」的清单，
+             竖屏一列更好翻、更好点，也不会把「标题+说明+滑杆」挤成一行。 -->
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
-            android:screenOrientation="sensorLandscape" />
+            android:screenOrientation="portrait" />
 
         <!-- 历史列表（§11） -->
         <activity

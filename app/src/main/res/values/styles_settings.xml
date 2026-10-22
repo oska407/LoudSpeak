@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ================= 设置页（竖版）样式 =================
+         竖屏 360dp 宽，一行只放一件事；分组用圆角卡片包起来，
+         行与行之间用 1dp 分隔线（s_stroke），标题 15sp / 说明 12sp 两级。
+         字号按 264ppi ≈ 1.65× 放大过，别照搬横屏的数字。 -->
+
+    <style name="SetSection">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/s_text2</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:paddingLeft">6dp</item>
+        <item name="android:paddingTop">20dp</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+
+    <style name="SetCard">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:paddingLeft">16dp</item>
+        <item name="android:paddingRight">16dp</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">10dp</item>
+    </style>
+
+    <style name="SetRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">54dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+    </style>
+
+    <style name="SetTitle">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/s_text</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="SetDesc">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/s_text2</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:lineSpacingMultiplier">1.25</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+
+    <style name="SetValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/s_accent</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:minWidth">56dp</item>
+        <item name="android:gravity">end</item>
+    </style>
+
+    <style name="SetSwitch">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:thumbTint">@color/s_accent</item>
+    </style>
+
+    <style name="SetSeek">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:progressTint">@color/s_accent</item>
+        <item name="android:progressBackgroundTint">@color/s_stroke</item>
+        <item name="android:thumbTint">@color/s_accent</item>
+    </style>
+
+    <style name="SetRadio">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/s_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:buttonTint">@color/s_accent</item>
+    </style>
+
+    <!-- 整行可点的按钮：不用 Material 胶囊，压成分组内侧的浅色条 -->
+    <style name="SetBtn" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">46dp</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:background">@drawable/bg_card_soft</item>
+        <item name="android:textColor">@color/s_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:paddingLeft">14dp</item>
+        <item name="android:paddingRight">14dp</item>
+    </style>
+
+    <style name="SetBtnAccent" parent="SetBtn">
+        <item name="android:textColor">@color/s_accent</item>
+    </style>
+
+    <style name="SetBtnDanger" parent="SetBtn">
+        <item name="android:textColor">@color/s_danger</item>
+    </style>
+
+    <style name="SetDivider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:background">@color/s_stroke</item>
+    </style>
+</resources>

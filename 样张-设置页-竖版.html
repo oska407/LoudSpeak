@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大声说 · 设置页（竖版）样张</title>
+<style>
+  :root{
+    --bg:#0E1216; --card:#17202A; --soft:#1F2A35; --stroke:#26323D;
+    --text:#E9EFF4; --text2:#8B99A5; --text3:#69757F;
+    --accent:#4FA3FF; --ok:#46C08A; --warn:#FFB74D; --danger:#FF5A52;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;background:#0a0d10;color:var(--text);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    display:flex;justify-content:center;gap:40px;padding:40px 20px;flex-wrap:wrap;
+  }
+  .phone{
+    width:360px;height:760px;background:var(--bg);border-radius:32px;overflow:hidden;
+    border:1px solid #1e262e;box-shadow:0 24px 60px rgba(0,0,0,.6);position:relative;
+    display:flex;flex-direction:column;
+  }
+  .scroll{overflow-y:auto;flex:1;padding:12px 16px 32px;scrollbar-width:thin}
+  .scroll::-webkit-scrollbar{width:0}
+
+  /* toolbar */
+  .bar{display:flex;align-items:center;min-height:56px;gap:6px}
+  .back{width:44px;height:44px;display:grid;place-items:center;font-size:22px;color:var(--text)}
+  .bar h1{font-size:22px;margin:0;font-weight:700}
+  .ver{margin-left:auto;font-size:12px;color:var(--text3)}
+
+  /* section */
+  .sec{font-size:13px;color:var(--text2);letter-spacing:.06em;padding:20px 6px 8px}
+
+  .card{background:var(--card);border:1px solid var(--stroke);border-radius:16px;padding:4px 16px 10px}
+
+  .row{display:flex;align-items:center;min-height:54px;padding:10px 0;gap:12px}
+  .row .col{flex:1;min-width:0}
+  .t{font-size:15px;color:var(--text);line-height:1.35}
+  .d{font-size:12px;color:var(--text2);line-height:1.35;margin-top:3px}
+  .v{font-size:15px;font-weight:700;color:var(--accent);min-width:56px;text-align:right}
+  .div{height:1px;background:var(--stroke)}
+
+  /* seek */
+  .seek{height:26px;display:flex;align-items:center;padding-bottom:6px}
+  .track{flex:1;height:4px;border-radius:2px;background:var(--stroke);position:relative}
+  .fill{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:var(--accent)}
+  .knob{position:absolute;top:-7px;width:18px;height:18px;border-radius:50%;background:var(--accent);
+        box-shadow:0 2px 6px rgba(0,0,0,.5);transform:translateX(-9px)}
+
+  /* radio */
+  .radio{display:flex;align-items:center;gap:12px;min-height:44px;font-size:14px;color:var(--text)}
+  .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--accent);display:grid;place-items:center;flex:none}
+  .dot i{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .dot.off{border-color:#4a5661}
+  .dot.off i{display:none}
+
+  /* switch */
+  .sw{width:46px;height:26px;border-radius:13px;background:#37424d;position:relative;flex:none;transition:.15s}
+  .sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+             background:#97a4ae;transition:.15s}
+  .sw.on{background:rgba(79,163,255,.35)}
+  .sw.on::after{left:23px;background:var(--accent)}
+  .sw.dis{opacity:.4}
+
+  /* button */
+  .btn{margin-top:6px;min-height:46px;border-radius:12px;background:var(--soft);
+       display:flex;align-items:center;padding:0 14px;font-size:14px;color:var(--text)}
+  .btn.ac{color:var(--accent)}
+  .btn.dg{color:var(--danger)}
+
+  /* spinner */
+  .spin{height:48px;display:flex;align-items:center;justify-content:space-between;
+        font-size:14px;color:var(--text);padding:0 2px}
+  .spin span{color:var(--text2);font-size:12px}
+
+  .legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-top:8px}
+  .sw-chip{width:22px;height:3px;border-radius:2px}
+
+  .hint{max-width:360px;font-size:13px;line-height:1.7;color:#8b99a5}
+  .hint h2{font-size:16px;color:#e9eff4;margin:0 0 10px}
+  .hint b{color:#4FA3FF;font-weight:600}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;background:rgba(79,163,255,.14);color:#4FA3FF;margin-right:6px}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="scroll">
+
+    <div class="bar">
+      <div class="back">←</div>
+      <h1>设置</h1>
+      <div class="ver">v0.2.1</div>
+    </div>
+
+    <!-- 练习反馈 -->
+    <div class="sec">练习反馈</div>
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <div class="t">分贝阈值</div>
+          <div class="d">说话声音低于它就变红。只影响颜色，不影响任何判定。</div>
+        </div>
+        <div class="v">30</div>
+      </div>
+      <div class="seek"><div class="track"><div class="fill" style="width:50%"></div><div class="knob" style="left:50%"></div></div></div>
+      <div class="div"></div>
+
+      <div class="row">
+        <div class="col">
+          <div class="t">句末停顿</div>
+          <div class="d">停顿超过这么久就断一句。越小切得越碎，讲题停顿多可以调大。</div>
+        </div>
+        <div class="v">800ms</div>
+      </div>
+      <div class="seek"><div class="track"><div class="fill" style="width:50%"></div><div class="knob" style="left:50%"></div></div></div>
+      <div class="div"></div>
+
+      <div class="t" style="margin-top:14px">红晕提醒</div>
+      <div class="d" style="margin-bottom:6px">说到「这个/那个」时屏幕边缘泛一下红，像缺血那样呼吸三次。只画在边缘，不挡画面、不拦触摸。</div>
+      <div class="radio"><div class="dot"><i></i></div>泛红提醒（默认）</div>
+      <div class="radio"><div class="dot off"><i></i></div>只在卡片里计数，不泛红</div>
+      <div class="radio"><div class="dot off"><i></i></div>完全安静（计数也不显示）</div>
+
+      <div class="row">
+        <div class="col">
+          <div class="t">红晕最短间隔</div>
+          <div class="d">连续说话时两次泛红之间的最小间隔。</div>
+        </div>
+        <div class="v">3s</div>
+      </div>
+      <div class="seek"><div class="track"><div class="fill" style="width:22%"></div><div class="knob" style="left:22%"></div></div></div>
+    </div>
+
+    <!-- 识别标注 -->
+    <div class="sec">识别标注</div>
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <div class="t">开启标注</div>
+          <div class="d">自动给识别文字上色加符号，不用提示词。关掉就是纯文字。</div>
+        </div>
+        <div class="sw on"></div>
+      </div>
+      <div class="div"></div>
+      <div class="row"><div class="t" style="flex:1">代词（红字+下划线）</div><div class="sw on"></div></div>
+      <div class="row"><div class="t" style="flex:1">口头禅（灰字+删除线）</div><div class="sw on"></div></div>
+      <div class="row"><div class="t" style="flex:1">模糊词（暗金+下划线）</div><div class="sw dis"></div></div>
+      <div class="row"><div class="t" style="flex:1">句式问题（⚠ 橙色标签）</div><div class="sw on"></div></div>
+      <div class="btn ac">看看标注图例（每种颜色是什么意思）</div>
+
+      <div class="legend"><div class="sw-chip" style="background:#FF5252"></div>代词</div>
+      <div class="legend"><div class="sw-chip" style="background:#7C8B96"></div>口头禅</div>
+      <div class="legend"><div class="sw-chip" style="background:#E8A33D"></div>模糊词（第 9 次会话后开）</div>
+      <div class="legend"><div class="sw-chip" style="background:#FFB74D"></div>句式问题</div>
+    </div>
+
+    <!-- 难度分级 -->
+    <div class="sec">难度分级</div>
+    <div class="card">
+      <div class="d" style="padding-top:12px;font-size:13px;color:var(--text)">
+        这是第 3 次会话 · 自动到第 1 级<br>当前在抓：L1 指代词
+      </div>
+      <div class="spin">自动（按第几次会话递进）<span>▾</span></div>
+      <div class="d" style="padding-top:6px">
+        节奏是「她能自己听出来」的先开：L1 代词 → L3 口头禅 → L2 模糊词 → L4-a 缺主体 → L4 半截句。<br>
+        自动挡：第 5 次开 L3，第 9 次开 L2，第 13 次开 L4-a，第 20 次全开。<br>
+        一次只加一级：连续 3 次不增加才该进下一级；变差了就退回上一级。
+      </div>
+    </div>
+
+    <!-- 模型 -->
+    <div class="sec">模型</div>
+    <div class="card">
+      <div style="font-size:13px;line-height:1.5;padding-top:12px">
+        ASR 模型　<span style="color:#46C08A">✓ 231MB</span><br>
+        ASR 词表　<span style="color:#46C08A">✓</span><br>
+        Qwen 模型　<span style="color:#69757F">✗ 缺（可选）</span><br>
+        Qwen 开关　<span style="color:#69757F">关</span>
+      </div>
+      <div class="d" style="padding-top:8px">判定一定会有结果：开着用规则后端判；拷了 GGUF 且真机带推理库时自动升级为模型评语，否则回退规则，不会卡住。</div>
+
+      <div class="row">
+        <div class="col">
+          <div class="t">本地 Qwen 判定</div>
+          <div class="d">可选，默认关。开了只是让评语更细；不开也一定会用规则判完。</div>
+        </div>
+        <div class="sw"></div>
+      </div>
+      <div class="btn ac">扫描并安装（ASR + Qwen 一起找）</div>
+      <div class="btn">从文件管理器选目录（会搜子目录）</div>
+      <div class="btn">校验 ASR（真加载一次，约 15–30 秒）</div>
+      <div class="d" style="padding-top:10px;color:var(--warn)">全盘读取：未授予 —— 扫不到 Download 是这个原因，不是文件没放好。</div>
+      <div class="btn">授予「所有文件访问」权限（扫 Download 用）</div>
+    </div>
+
+    <!-- 存储 -->
+    <div class="sec">存储</div>
+    <div class="card">
+      <div style="font-size:14px;padding-top:12px;line-height:1.35">
+        <span style="color:var(--warn)">⚠ 最旧的一条已经 34 天（超过 30 天，只提示不自动删）</span><br>
+        会话 2.41GB · 回收站 0.12GB · 可用 41.60GB
+      </div>
+      <div class="d" style="padding-top:8px">
+        模型：/storage/emulated/0/Android/data/com.oska.loudspeak/files/models<br>
+        录制：/storage/emulated/0/Android/data/com.oska.loudspeak/files/SpeakClear/sessions（默认）
+      </div>
+      <div class="div"></div>
+
+      <div class="row">
+        <div class="col">
+          <div class="t">存放位置</div>
+          <div class="d">改完只影响新会话；老记录留在原处，要搬得点下面的「迁移」。</div>
+        </div>
+      </div>
+      <div class="btn">改录制存放目录…</div>
+      <div class="btn">迁移已有记录到当前目录</div>
+      <div class="btn">恢复默认目录</div>
+      <div class="div"></div>
+
+      <div class="row">
+        <div class="col">
+          <div class="t">保留多久后提醒</div>
+          <div class="d">只是提醒，永远不会自动删。</div>
+        </div>
+        <div class="spin" style="width:110px">30 天 <span>▾</span></div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <div class="t">占多少空间后提醒</div>
+          <div class="d">同样只是提醒。</div>
+        </div>
+        <div class="spin" style="width:110px">10 GB <span>▾</span></div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <div class="t">删除时只删视频、留文字</div>
+          <div class="d">视频约 5.3MB/分钟，文字才几十 KB。留着以后还能翻。</div>
+        </div>
+        <div class="sw"></div>
+      </div>
+      <div class="div"></div>
+      <div class="btn">清理建议（列出最旧的 10 条，自己勾）</div>
+      <div class="btn">回收站（逐条恢复 / 永久删除）</div>
+      <div class="btn dg">清空回收站（不可恢复）</div>
+    </div>
+
+    <!-- 其它 -->
+    <div class="sec">其它</div>
+    <div class="card">
+      <div class="btn" style="margin-top:12px">系统自检（内存 / 存储 / 麦克风）</div>
+      <div class="btn">采集验证（预览 / 录制 / 实测分辨率）</div>
+      <div class="btn">错误报告（调试用）</div>
+    </div>
+
+    <div class="sec">关于</div>
+    <div class="card">
+      <div class="d" style="padding-top:12px;padding-bottom:8px;font-size:13px">
+        大声说 —— 帮她少说「这个那个」，把话说完整。<br>
+        完全离线：不联网、不申请网络权限，录音录像只存在这台手机里。<br>
+        谁的记录谁能删：她可以删自己的会话（进回收站 7 天，可恢复）。<br>
+        不给分、不给星、不排名 —— 只让她看见自己说的话。
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="hint">
+  <h2>这一版改了什么</h2>
+  <p><span class="tag">竖版</span>设置页改用<b>竖屏</b>：一列读下来，滑杆不会被挤成一条。<br>
+  主界面<b>保持横版</b>——四行平铺的工作台，横屏才放得下。</p>
+  <p><span class="tag">结构</span>从「十几个一样白的按钮堆在一起」改成<b>分组卡片</b>：<br>
+  行标题 15sp 亮色，说明 12sp 灰字压在下一行，一眼能分清主次。</p>
+  <p><span class="tag">新增入口</span>红晕间隔、模糊词标注、难度分级、<br>
+  存放位置（改目录 / 迁移 / 恢复默认）、保留天数与容量阈值、<br>
+  删除时只删视频留文字 —— 都是文档里写了但之前界面上没入口的项。</p>
+  <p style="color:#5c6a75">这是设计样张，不是截图；真机渲染会用系统字体。</p>
+</div>
+
+</body>
+</html>

@@ -745,8 +745,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun runJudgmentAndDiagnosis(elapsedMs: Long) {
         val count = Prefs.incSessionCount(this)   // ③④ 档同样计数（§12.0）
+        // 分级：自动按「第 N 次会话」递进，设置页可手动锁定（§8.6）
+        val levels = RuleEngine.levels(count, Prefs.levelOverride(this))
         asrExecutor.execute {
-            RuleEngine.evaluate(sentences, l4Enabled = RuleEngine.l4Enabled(count))
+            RuleEngine.evaluate(sentences, levels, Prefs.muzzyEnabled(this))
             // 离线自动判定（§R9）：规则后端默认工作；开了本地 Qwen 且 GGUF 就位则尝试升级，失败回退规则
             val res = QwenJudge.judge(
                 sentences,

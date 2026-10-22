@@ -13,6 +13,49 @@ object RuleEngine {
     /** 口头禅/填充词（§R9 标注体系）：纯语气词，与代词不重叠；弱化显示，提示「能省就省」 */
     val FILLERS = listOf("嗯", "啊", "呃", "额", "哦", "唔", "哎", "呀", "诶")
 
+    /** L2 模糊词（§8.2 / D3）：默认关闭，第 9 次会话起才开 —— 放了等于没说 */
+    val MUZZY = listOf("东西", "玩意儿", "什么的", "有点")
+
+    /**
+     * 分级开关（§8.6）。顺序按「她自己能否察觉」排：L1 → L3 → L2 → L4-a → L4-b/c，
+     * 不是按编号排。index 即第几级（1..5）。
+     */
+    data class Levels(
+        val index: Int,
+        val l2: Boolean,      // 模糊词（东西/玩意儿…）
+        val l4a: Boolean,     // 缺主体
+        val l4bc: Boolean     // 半截句 / 要素缺失
+    ) {
+        val l4: Boolean get() = l4a || l4bc
+        val name: String get() = levelName(index)
+    }
+
+    /** 按「第 N 次会话」自动递进（§8.6 表） */
+    fun autoLevelIndex(sessionCount: Int): Int = when {
+        sessionCount >= 20 -> 5
+        sessionCount >= 13 -> 4
+        sessionCount >= 9 -> 3
+        sessionCount >= 5 -> 2
+        else -> 1
+    }
+
+    fun levelName(i: Int): String = when (i) {
+        1 -> "L1 指代词"
+        2 -> "L1 指代词 + L3 口头禅"
+        3 -> "L1 + L3 + L2 模糊词"
+        4 -> "L1 + L3 + L2 + L4-a 缺主体"
+        else -> "全开（含 L4-b 半截句 / L4-c 要素缺失）"
+    }
+
+    /**
+     * 取当前级别：override 1..5 表示手动锁定（设置页可改），0 = 自动按次数递进。
+     * 手动锁定是为了「她已经做得到，别再等次数」这种情况，也方便真机逐级验证。
+     */
+    fun levels(sessionCount: Int, override: Int): Levels {
+        val i = if (override in 1..5) override else autoLevelIndex(sessionCount)
+        return Levels(i, l2 = i >= 3, l4a = i >= 4, l4bc = i >= 5)
+    }
+
     /** 单句数据（对应 §10.3 transcript 字段的内存形态） */
     class Sentence(
         val index: Int,
@@ -22,6 +65,7 @@ object RuleEngine {
         val uncertain: Boolean,      // 识别不清（ASR 返回 null）
         val pronouns: MutableList<Pair<String, Int>> = mutableListOf(), // 词→句内位置
         val fillers: MutableList<Pair<String, Int>> = mutableListOf(),  // 口头禅→句内位置（§R9）
+        val muzzy: MutableList<Pair<String, Int>> = mutableListOf(),    // 模糊词→句内位置（L2）
         val flags: MutableList<String> = mutableListOf(),               // 缺主体/半截句/要素缺失
         var selfMarked: Boolean = false,
         val take: Int = 1,
@@ -33,6 +77,7 @@ object RuleEngine {
         val followUp: String
             get() = when {
                 pronouns.isNotEmpty() -> "这个是哪个？能叫出它的名字吗？"
+                flags.contains("模糊词") -> "「东西/玩意儿」是什么？换成它的名字。"
                 flags.contains("半截句") -> "这句话说完了吗？把话补完整。"
                 flags.contains("缺主体") -> "是谁/是什么等于它？先说主体。"
                 flags.contains("要素缺失") -> "先说题目要求什么，再说怎么算。"
@@ -66,38 +111,63 @@ object RuleEngine {
         return hits.sortedBy { it.second }
     }
 
+    /** 模糊词匹配（L2，§8.2）。返回命中列表（词, 位置）。 */
+    fun matchMuzzy(text: String): List<Pair<String, Int>> {
+        val hits = mutableListOf<Pair<String, Int>>()
+        for (m in MUZZY) {
+            var i = text.indexOf(m)
+            while (i >= 0) {
+                hits.add(m to i)
+                i = text.indexOf(m, i + m.length)
+            }
+        }
+        return hits.sortedBy { it.second }
+    }
+
     /**
-     * 整段判定（§12.3）：逐句 L1 + L4 高召回 → 跨句兜底撤销部分「缺主体」。
-     * l4Enabled：按「第 N 次会话」节奏（§8.6），第 13 次会话起才开 L4-a。
+     * 整段判定（§12.3）：逐句 L1 + L2（可选）+ L4 高召回 → 跨句兜底撤销部分「缺主体」。
+     * levels：按「第 N 次会话」自动递进或设置页手动锁定（§8.6）。
      */
-    fun evaluate(sentences: List<Sentence>, l4Enabled: Boolean) {
-        // L1
+    fun evaluate(sentences: List<Sentence>, levels: Levels, muzzyOn: Boolean = true) {
+        // L1 + L3（口头禅只做标注，不进问题计数）
         for (s in sentences) {
             if (!s.judgeable || s.selfMarked) continue
-            s.pronouns.clear(); s.flags.clear(); s.fillers.clear()
+            s.pronouns.clear(); s.flags.clear(); s.fillers.clear(); s.muzzy.clear()
             s.pronouns.addAll(matchPronouns(s.text))
             s.fillers.addAll(matchFillers(s.text))
         }
-        if (!l4Enabled) return
+        // L2 模糊词
+        if (levels.l2 && muzzyOn) {
+            for (s in sentences) {
+                if (!s.judgeable || s.selfMarked) continue
+                s.muzzy.addAll(matchMuzzy(s.text))
+                if (s.muzzy.isNotEmpty() && s.pronouns.isEmpty()) s.flags.add("模糊词")
+            }
+        }
+        if (!levels.l4) return
 
         // L4-a 缺主体：句首以动词/介词开头且前句无主体（简化词表）
         val subjectHints = listOf("x", "y", "2x", "3x", "左边", "右边", "分子", "分母", "方程", "题目",
             "这道题", "等式", "两边", "式子", "因式", "多项式", "单项式", "结果", "答案", "它")
         val startsWithAction = listOf("等于", "加上", "减去", "乘以", "除以", "移项", "合并", "通分", "约分", "然后", "所以", "因为")
-        for (s in sentences) {
-            if (!s.judgeable || s.selfMarked || s.pronouns.isNotEmpty()) continue
-            if (startsWithAction.any { s.text.startsWith(it) }) s.flags.add("缺主体")
-        }
-        // 跨句兜底（§8.4.2）：前后句已提供明确主体 → 撤销
-        for (i in sentences.indices) {
-            val s = sentences[i]
-            if (!s.flags.contains("缺主体")) continue
-            val prev = sentences.getOrNull(i - 1)?.text ?: ""
-            val next = sentences.getOrNull(i + 1)?.text ?: ""
-            if (subjectHints.any { prev.contains(it) } || subjectHints.any { next.contains(it) }) {
-                s.flags.remove("缺主体")
+        if (levels.l4a) {
+            for (s in sentences) {
+                if (!s.judgeable || s.selfMarked || s.pronouns.isNotEmpty()) continue
+                if (startsWithAction.any { s.text.startsWith(it) }) s.flags.add("缺主体")
+            }
+            // 跨句兜底（§8.4.2）：前后句已提供明确主体 → 撤销
+            for (i in sentences.indices) {
+                val s = sentences[i]
+                if (!s.flags.contains("缺主体")) continue
+                val prev = sentences.getOrNull(i - 1)?.text ?: ""
+                val next = sentences.getOrNull(i + 1)?.text ?: ""
+                if (subjectHints.any { prev.contains(it) } || subjectHints.any { next.contains(it) }) {
+                    s.flags.remove("缺主体")
+                }
             }
         }
+        if (!levels.l4bc) return
+
         // L4-b 半截句：<6 字且不含因果词；或以「然后/所以/就/再」结尾
         for (s in sentences) {
             if (!s.judgeable || s.selfMarked || s.pronouns.isNotEmpty() || s.flags.isNotEmpty()) continue
@@ -116,6 +186,10 @@ object RuleEngine {
             sentences.last().flags.add("要素缺失")
         }
     }
+
+    /** 兼容旧签名：只区分「L4 开不开」 */
+    fun evaluate(sentences: List<Sentence>, l4Enabled: Boolean) =
+        evaluate(sentences, Levels(if (l4Enabled) 5 else 1, l2 = false, l4a = l4Enabled, l4bc = l4Enabled))
 
     /** 分级开关（§8.6）：第 13 次会话起开 L4-a；仅此一级，宁漏勿错 */
     fun l4Enabled(sessionCount: Int): Boolean = sessionCount >= 13

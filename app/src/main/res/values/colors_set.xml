@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置页（竖版）专用配色：与主界面同一套深色底，但分了三档文字层级，
+     避免原来「全白 16sp 堆在一起」那种看不清主次的问题。 -->
+<resources>
+    <color name="s_bg">#FF0E1216</color>
+    <color name="s_card">#FF17202A</color>
+    <color name="s_card_soft">#FF1F2A35</color>
+    <color name="s_stroke">#FF26323D</color>
+
+    <color name="s_text">#FFE9EFF4</color>
+    <color name="s_text2">#FF8B99A5</color>
+    <color name="s_text3">#FF69757F</color>
+
+    <color name="s_accent">#FF4FA3FF</color>
+    <color name="s_ok">#FF46C08A</color>
+    <color name="s_warn">#FFFFB74D</color>
+    <color name="s_danger">#FFFF5A52</color>
+    <color name="s_pronoun">#FFFF5252</color>
+</resources>
