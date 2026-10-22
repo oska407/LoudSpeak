@@ -37,9 +37,21 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
+
+      # 失败时把错误尾部写进运行摘要（无需登录即可在 run 页面读到）
+      - name: Write error tail to summary
+        if: failure()
+        run: |
+          {
+            echo "### Build failure - log tail"
+            echo '```'
+            tail -150 build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: loudspeak-debug-apk
