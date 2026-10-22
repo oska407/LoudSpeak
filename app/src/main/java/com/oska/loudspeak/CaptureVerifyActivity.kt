@@ -17,7 +17,10 @@ import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.ViewPort
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
@@ -92,16 +95,23 @@ class CaptureVerifyActivity : AppCompatActivity() {
             try {
                 val provider = future.get()
 
-                val preview = Preview.Builder()
-                    .setTargetResolution(android.util.Size(1280, 720))
-                    .build()
+                // 预览不设分辨率：视场由下面的 ViewPort(3:4) 统一决定
+                val preview = Preview.Builder().build()
                 preview.setSurfaceProvider(previewView.surfaceProvider)
 
-                // 录制：目标 544×720（3:4 竖幅，16 对齐版本）
-                val recorder = Recorder.Builder().build()
-                val vc = VideoCapture.Builder(recorder)
-                    .setTargetResolution(android.util.Size(544, 720))
+                // 录制：只能用 QualitySelector 定分辨率。
+                // VideoCapture.Builder.setTargetResolution() 是 @RestrictTo 死 API，
+                // 调用会直接抛 UnsupportedOperationException("setTargetResolution is not supported.")
+                // —— 这正是本页原来「相机绑定失败」的原因。
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(
+                        QualitySelector.from(
+                            Quality.HD,
+                            FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                        )
+                    )
                     .build()
+                val vc = VideoCapture.Builder(recorder).build()
                 videoCapture = vc
 
                 // ViewPort：预览与录制共享同一 3:4 裁切视场

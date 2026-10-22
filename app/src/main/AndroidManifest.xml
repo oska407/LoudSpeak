@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 完全离线 App：不申请 INTERNET，模型由侧载（adb push / 文件拷贝）导入 -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 模型扫描用：Android 11+ 默认读不到 /sdcard/Download，没这个权限就「明明放着却扫不到」。
+         侧载场景可随时在系统设置里收回；没有它 App 也能用（只是扫不到 Download，
+         需把模型拷到 App 目录或用 SAF 选目录）。 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 

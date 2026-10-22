@@ -61,6 +61,13 @@ object Prefs {
     fun modelsDir(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/models" } ?: "${ctx.filesDir.absolutePath}/models"
 
+    /** 本地 Qwen 目录（models 下的 llm 子目录，放 .gguf） */
+    fun llmDir(ctx: Context): String = "${modelsDir(ctx)}/llm"
+
+    /** 本地 Qwen 开关：默认关（§5.7 可选、录后按需加载、判完立即释放） */
+    fun llmEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("llmEnabled", false)
+    fun setLlmEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("llmEnabled", v).apply()
+
     /** 会话根目录（app 外部私有，免权限写入；文件管理器/USB 可访问） */
     fun sessionsRoot(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/SpeakClear/sessions" }

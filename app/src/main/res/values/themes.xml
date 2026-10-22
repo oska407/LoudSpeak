@@ -3,6 +3,10 @@
         <item name="android:colorBackground">@color/bg</item>
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/black</item>
+        <!-- 设计约定「无顶部状态条」（§6.1）。WindowInsetsController.hide() 在 ColorOS 上
+             实测不生效（状态栏照旧占掉 47dp），这里用主题级全屏，对所有 Activity 生效。 -->
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <!-- 全局按钮样式（含代码里 new Button() 出来的）：
              本机是浅色模式，M3 默认的禁用态画的是近黑 onSurface，
              压在深色背景上等于隐形（首导页授权后按钮「消失」就是这个原因）。 -->

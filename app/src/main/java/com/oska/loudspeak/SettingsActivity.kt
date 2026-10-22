@@ -23,7 +23,25 @@ import java.io.File
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var tvModelStatus: TextView
+    private lateinit var tvPerm: TextView
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    private fun hasAllFiles(): Boolean =
+        android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
+
+    private fun refreshPerm() {
+        if (!::tvPerm.isInitialized) return
+        tvPerm.text = if (hasAllFiles())
+            "全盘读取：已授予 ✓（能扫 Download / Documents 里的模型）"
+        else
+            "全盘读取：未授予（扫不到 Download。可点下面按钮授权，或把模型拷到 App 目录 / 用 SAF 选目录）"
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshPerm()
+        if (::tvModelStatus.isInitialized) refreshModelStatus()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,20 +137,63 @@ class SettingsActivity : AppCompatActivity() {
         }
         root.addView(btnPcIp)
 
-        // 模型（§5.4 SAF 导入 → 拷到 app 私有目录供 ONNX 直接读路径）
-        tvModelStatus = TextView(this).apply { textSize = 15f; setTextColor(0xFFFFFFFF.toInt()) }
-        root.addView(label("模型（SenseVoice int8，必装约 233MB）"))
-        root.addView(tvModelStatus)
-        val btnScan = Button(this).apply { text = "扫描模型（推荐：在常见位置自动找）" }
-        btnScan.setOnClickListener { scanModels() }
-        val btnImport = Button(this).apply { text = "从文件管理器选择模型目录 (SAF)" }
-        btnImport.setOnClickListener {
-            startActivityForResult(
-                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 200)
+        // 模型（§5.4）：ASR 必装 + Qwen 可选（默认关，见 §5.7）
+        tvModelStatus = TextView(this).apply {
+            textSize = 15f; setTextColor(0xFFFFFFFF.toInt()); setLineSpacing(0f, 1.2f)
         }
-        val btnCheck = Button(this).apply { text = "校验模型" }
-        btnCheck.setOnClickListener { checkModel() }
-        root.addView(btnScan); root.addView(btnImport); root.addView(btnCheck)
+        root.addView(label("模型状态（文件放好后点「扫描并安装」）"))
+        root.addView(tvModelStatus)
+
+        // 全盘读取权限：没有它 Android 11+ 读不到 /sdcard/Download，扫描必然「漏文件」
+        tvPerm = TextView(this).apply {
+            textSize = 14f; setTextColor(0xFF9AA7B0.toInt()); setPadding(0, pad / 3, 0, pad / 4)
+        }
+        root.addView(tvPerm)
+        root.addView(Button(this).apply {
+            text = "授予「所有文件访问」权限（扫 Download 用）"
+            setOnClickListener {
+                if (hasAllFiles()) {
+                    Toast.makeText(this@SettingsActivity, "已经授予了", Toast.LENGTH_SHORT).show()
+                } else if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    try {
+                        startActivity(
+                            Intent(
+                                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Toast.makeText(this@SettingsActivity, "打不开系统页：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        })
+        refreshPerm()
+        root.addView(Button(this).apply {
+            text = "扫描并安装（ASR + Qwen 一起找）"
+            setOnClickListener { scanModels() }
+        })
+        root.addView(Button(this).apply {
+            text = "从文件管理器选择目录 (SAF，会搜子目录)"
+            setOnClickListener { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 200) }
+        })
+        root.addView(Button(this).apply {
+            text = "校验 ASR（真加载一次，约 15–30 秒）"
+            setOnClickListener { checkModel() }
+        })
+
+        // Qwen 开关（§5.7：默认关、录后按需加载、判完释放）
+        root.addView(label("本地 Qwen（可选，默认关闭）"))
+        root.addView(android.widget.Switch(this).apply {
+            isChecked = Prefs.llmEnabled(this@SettingsActivity)
+            text = "  启用本地 Qwen 判定"
+            textSize = 16f
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnCheckedChangeListener { _, v ->
+                Prefs.setLlmEnabled(this@SettingsActivity, v)
+                refreshModelStatus()
+            }
+        })
 
         // 其它入口
         val btnErr = Button(this).apply { text = "错误报告（调试用）" }
@@ -154,55 +215,80 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refreshModelStatus() {
         val (m, t) = AsrEngine(Prefs.modelsDir(this)).checkFiles()
+        val llm = newestGguf()
         tvModelStatus.text = buildString {
             append("目录：").append(Prefs.modelsDir(this@SettingsActivity)).append('\n')
-            append("asr/model.int8.onnx：").append(
-                if (m?.isFile == true) "${m.length() / 1_000_000}MB ✓" else "✗ 缺失").append('\n')
-            append("asr/tokens.txt：").append(if (t?.isFile == true) "✓" else "✗ 缺失").append('\n')
+            append("ASR  onnx：").append(
+                if (m?.isFile == true) "${m.length() / 1_000_000}MB ✓" else "✗ 缺").append('\n')
+            append("ASR  tokens：").append(if (t?.isFile == true) "✓" else "✗ 缺").append('\n')
+            append("Qwen 模型：").append(
+                if (llm != null) "${llm.name}（${llm.length() / 1_000_000}MB）✓"
+                else "✗ 缺（可选，放 .gguf 到 " + Prefs.llmDir(this@SettingsActivity) + "）").append('\n')
+            append("Qwen 开关：").append(if (Prefs.llmEnabled(this@SettingsActivity)) "开" else "关").append('\n')
+            append("注：本地 Qwen 目前只做到「文件就位 + 状态」；GGUF 推理引擎还没接（PC-3 批次）。\n")
             append(storageUsage())
         }
     }
 
-    private fun storageUsage(): String = try {
-        val sessions = java.io.File(Prefs.sessionsRoot(this))
-        val used = sessions.walkBottomUp().filter { it.isFile }.map { it.length() }.sum()
-        val free = sessions.usableSpace
-        "占用：%.2fGB · 剩余：%.2fGB%s".format(
-            used / 1e9, free / 1e9, if (free < 2e9) " ⚠剩余不足2GB" else "")
-    } catch (_: Exception) { "" }
+    /** <models>/llm 下最新的那个 .gguf */
+    private fun newestGguf(): File? = try {
+        File(Prefs.llmDir(this)).listFiles { f: File -> f.isFile && f.name.endsWith(".gguf", true) }
+            ?.maxByOrNull { it.lastModified() }
+    } catch (_: Exception) { null }
 
-    /** 扫描常见位置找 model.int8.onnx + tokens.txt，列出候选让用户选（选中即拷入活动目录） */
+    private fun storageUsage(): String {
+        return try {
+            // 早先用 sessionsRoot.usableSpace：那个目录没建过时返回 0，于是显示「剩余 0.00GB ⚠不足2GB」
+            val root = File(Prefs.modelsDir(this)).parentFile ?: return ""
+            root.mkdirs()
+            val sessions = File(Prefs.sessionsRoot(this)).apply { mkdirs() }
+            val used = sessions.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+            val free = root.usableSpace
+            val warn = if (free in 1..2_000_000_000L) " ⚠剩余不足2GB" else ""
+            "会话占用：%.2fGB · 可用空间：%.2fGB%s".format(used / 1e9, free / 1e9, warn)
+        } catch (_: Exception) { "" }
+    }
+
+    /** 扫描常见位置：ASR（onnx+tokens）与 Qwen（gguf）一起列，选一个装一个 */
     private fun scanModels() {
-        tvModelStatus.text = "扫描中…（App 私有目录 / Download/SpeakClear 等）"
+        tvModelStatus.text = "扫描中…（App 目录 / Download / Documents，最多 6 层，几千个文件要点时间）"
         asrExecutor.execute {
             val found = com.oska.loudspeak.core.ModelScanner.scan(this)
             runOnUiThread {
                 if (found.isEmpty()) {
                     tvModelStatus.text = buildString {
-                        append("没扫到模型。两种放法：\n")
-                        append("① 电脑 USB 把模型文件夹拷到：\n")
+                        append("没扫到模型。两个可靠办法：\n")
+                        append("① 数据线/MTP 把文件拷到这个目录（能建子目录）：\n")
                         append(Prefs.modelsDir(this@SettingsActivity)).append('\n')
-                        append("② 或用下面的 SAF 按钮选目录")
+                        append("   ASR 放 asr/model.int8.onnx + asr/tokens.txt\n")
+                        append("   Qwen 放 llm/*.gguf\n")
+                        append("② 点下面「从文件管理器选择目录」，直接选放模型的那个文件夹（会搜子目录）\n")
+                        append("为什么扫不到：Android 13+ 默认不允许读 Download，属系统限制，不是文件没放好。")
                     }
                     return@runOnUiThread
                 }
                 val labels = found.map { it.label() }.toTypedArray()
                 AlertDialog.Builder(this)
-                    .setTitle("找到 ${found.size} 个模型，选择一个")
-                    .setItems(labels) { _, which ->
-                        val f = found[which]
-                        tvModelStatus.text = "导入中…（约 230MB，请勿离开）"
-                        asrExecutor.execute {
-                            val ok = com.oska.loudspeak.core.ModelScanner.install(
-                                f.model, f.tokens, Prefs.modelsDir(this))
-                            runOnUiThread {
-                                tvModelStatus.text = if (ok) "✓ 已导入并设为当前模型" else "✗ 导入失败"
-                                refreshModelStatus()
-                            }
-                        }
-                    }
+                    .setTitle("找到 ${found.size} 个候选，选一个安装")
+                    .setItems(labels) { _, which -> installFound(found[which]) }
                     .setNegativeButton("取消", null)
                     .show()
+            }
+        }
+    }
+
+    private fun installFound(f: com.oska.loudspeak.core.ModelScanner.Found) {
+        tvModelStatus.text = "安装中…（${f.sizeMb}MB，请勿离开）"
+        asrExecutor.execute {
+            val ok = com.oska.loudspeak.core.ModelScanner.install(f, Prefs.modelsDir(this))
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    if (ok) "已装好：" + (if (f.kind == com.oska.loudspeak.core.ModelScanner.Kind.ASR)
+                        "语音识别（回主界面会自动加载）" else "Qwen 模型") else "安装失败",
+                    Toast.LENGTH_LONG
+                ).show()
+                refreshModelStatus()
             }
         }
     }
@@ -227,29 +313,41 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * SAF：把所选目录（含子目录）里的 ASR / Qwen 文件分别装到对应位置。
+     * 早先只查一层、只认两个死文件名，所以「选了目录却什么也没导入」。
+     */
     private fun importModels(treeUri: Uri) {
-        tvModelStatus.text = "导入中…（233MB，请勿离开）"
+        tvModelStatus.text = "导入中…（扫描所选目录含子目录，请勿离开）"
         asrExecutor.execute {
             try {
                 val cr = contentResolver
-                val docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
-                val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
-                val destDir = File(Prefs.modelsDir(this), "asr").apply { mkdirs() }
-                cr.query(childrenUri, arrayOf(
-                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
-                    while (c.moveToNext()) {
-                        val id = c.getString(0)
-                        val name = c.getString(1) ?: continue
-                        if (name != "model.int8.onnx" && name != "tokens.txt") continue
-                        val fileUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-                        cr.openInputStream(fileUri)?.use { input ->
-                            File(destDir, name).outputStream().use { output -> input.copyTo(output) }
-                        }
-                    }
+                val rootId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+                val onnx = ArrayList<Pair<String, Uri>>()
+                val tokens = ArrayList<Pair<String, Uri>>()
+                val gguf = ArrayList<Pair<String, Uri>>()
+                walkTree(cr, treeUri, rootId, onnx, tokens, gguf, 0)
+
+                var asrOk = false
+                var llmCount = 0
+                if (onnx.isNotEmpty() && tokens.isNotEmpty()) {
+                    val destAsr = File(Prefs.modelsDir(this), "asr").apply { mkdirs() }
+                    val best = onnx.maxByOrNull { scoreName(it.first) }!!
+                    copyFrom(cr, best.second, File(destAsr, "model.int8.onnx"))
+                    copyFrom(cr, tokens.first().second, File(destAsr, "tokens.txt"))
+                    asrOk = File(destAsr, "model.int8.onnx").isFile && File(destAsr, "tokens.txt").isFile
+                }
+                if (gguf.isNotEmpty()) {
+                    val destLlm = File(Prefs.llmDir(this)).apply { mkdirs() }
+                    for ((name, uri) in gguf) if (copyFrom(cr, uri, File(destLlm, name))) llmCount++
                 }
                 runOnUiThread {
-                    Toast.makeText(this, "导入完成", Toast.LENGTH_SHORT).show()
+                    tvModelStatus.text = buildString {
+                        append("导入结果：ASR ")
+                        append(if (asrOk) "✓" else if (onnx.isEmpty() && tokens.isEmpty()) "未选到" else "✗（缺 onnx 或 tokens）")
+                        append(" · Qwen ").append(if (llmCount > 0) "✓ $llmCount 个" else "未选到")
+                        append('\n')
+                    }
                     refreshModelStatus()
                 }
             } catch (e: Exception) {
@@ -257,4 +355,49 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun walkTree(
+        cr: android.content.ContentResolver, treeUri: Uri, dirId: String,
+        onnx: MutableList<Pair<String, Uri>>, tokens: MutableList<Pair<String, Uri>>,
+        gguf: MutableList<Pair<String, Uri>>, depth: Int
+    ) {
+        if (depth > 4) return
+        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
+        cr.query(
+            children,
+            arrayOf(
+                android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+            ), null, null, null
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0); val name = c.getString(1) ?: continue; val mime = c.getString(2)
+                if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                    walkTree(cr, treeUri, id, onnx, tokens, gguf, depth + 1); continue
+                }
+                val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                when {
+                    name.equals("tokens.txt", true) -> tokens.add(name to uri)
+                    name.endsWith(".onnx", true) -> onnx.add(name to uri)
+                    name.endsWith(".gguf", true) -> gguf.add(name to uri)
+                }
+            }
+        }
+    }
+
+    private fun scoreName(n: String): Int {
+        val s = n.lowercase()
+        var v = 0
+        if (s.contains("sense")) v += 6
+        if (s.contains("model")) v += 3
+        if (s.contains("int8")) v += 2
+        return v
+    }
+
+    private fun copyFrom(cr: android.content.ContentResolver, uri: Uri, dst: File): Boolean = try {
+        cr.openInputStream(uri)?.use { input ->
+            dst.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
+        } != null
+    } catch (_: Exception) { false }
 }

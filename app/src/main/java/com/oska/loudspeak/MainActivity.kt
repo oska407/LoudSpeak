@@ -28,7 +28,10 @@ import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.ViewPort
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
@@ -122,6 +125,7 @@ class MainActivity : AppCompatActivity() {
     private var autoReplayEndMs = -1L
 
     private var state = "idle" // idle / recording / paused / replay / diag
+    private var asrLoading = false
     private var lastGlowAt = 0L
     private var prompted10Min = false
 
@@ -206,9 +210,23 @@ class MainActivity : AppCompatActivity() {
         updateModeBadge()
         updateButtons()
         idleHint()
-        // 模型后台加载完（eMMC 15–30s）后刷新提示：原来只有 Toast/进设置才更新
+        ensureAsrLoaded()
+    }
+
+    /**
+     * 有模型文件才加载；已经加载过就跳过。
+     * 关键点：装完模型回到主界面时必须能自己重新加载 —— 早先只在 onCreate 加载一次，
+     * 结果设置页显示两个文件都在 ✓，主界面却一直挂着「缺模型文件」的旧状态。
+     */
+    private fun ensureAsrLoaded() {
+        if (asr.available || asrLoading) return
+        val (m, t) = asr.checkFiles()
+        if (m?.isFile != true || t?.isFile != true) return
+        asrLoading = true
+        idleHint()
         asrExecutor.execute {
             asr.load()
+            asrLoading = false
             main.post { if (state == "idle" && sentences.isEmpty()) idleHint() }
         }
     }
@@ -217,15 +235,20 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (state == "idle") {
             mode = Prefs.getMode(this); updateModeBadge()
-            // 从「设置」装完模型回来时，把提示刷新成真实状态
-            if (sentences.isEmpty()) idleHint()
+            // 从「设置」装完模型回来：自动补加载 + 刷新提示
+            if (sentences.isEmpty()) { ensureAsrLoaded(); idleHint() }
         }
     }
 
     /** 空白文字区的提示：模型没就绪时直接说清缺什么，而不是一闪而过的 Toast */
     private fun idleHint() {
         if (sentences.isNotEmpty()) return
-        tvText.text = if (asr.available) "（点「录音」开始练习）" else "还不能开始：${asr.status}\n（点底部「设置」→ 扫描模型）"
+        tvText.text = when {
+            asr.available -> "（点「录音」开始练习）"
+            asrLoading -> "正在加载语音模型…（首次约 15–30 秒，加载完这里会变）"
+            asr.status == "未加载" -> "还不能开始：还没找到模型文件\n（点底部「设置」→ 扫描并安装）"
+            else -> "还不能开始：${asr.status}\n（点底部「设置」→ 扫描并安装）"
+        }
     }
 
     /** 点击屏幕任意处立即消退红晕（§7.3）——只看不改事件流向，七键照常收得到点击 */
@@ -397,7 +420,11 @@ class MainActivity : AppCompatActivity() {
 
     /** 绑定一次相机。withViewPort=true 走设计的主方案；false 为降级方案（由 PreviewView 自己裁中间）。 */
     private fun bindOnce(provider: ProcessCameraProvider, record: Boolean, withViewPort: Boolean) {
-        val preview = Preview.Builder().setTargetResolution(Size(1280, 720)).build()
+        val previewBuilder = Preview.Builder()
+        // 有 ViewPort 时不要再设分辨率（两者叠加在部分机型/版本上会互相顶掉）；
+        // 降级方案里用它把预览拉到 16:9，再让 PreviewView 的 FILL_CENTER 裁中间竖条。
+        if (!withViewPort) previewBuilder.setTargetResolution(Size(1280, 720))
+        val preview = previewBuilder.build()
         preview.setSurfaceProvider(previewView.surfaceProvider)
         var groupBuilder = UseCaseGroup.Builder().addUseCase(preview)
         if (withViewPort) {
@@ -407,8 +434,19 @@ class MainActivity : AppCompatActivity() {
             )
         }
         if (record) {
-            val recorder = Recorder.Builder().build()
-            val vc = VideoCapture.Builder(recorder).setTargetResolution(Size(544, 720)).build()
+            // ⚠️ 绝对不能用 VideoCapture.Builder.setTargetResolution()：
+            // 它是 @RestrictTo(LIBRARY_GROUP) 的死 API，调用即抛
+            // UnsupportedOperationException("setTargetResolution is not supported.")。
+            // 录制分辨率只能通过 Recorder 的 QualitySelector 指定，3:4 裁切由 ViewPort 统一保证。
+            val recorder = Recorder.Builder()
+                .setQualitySelector(
+                    QualitySelector.from(
+                        Quality.HD,
+                        FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)   // 前置不支持 HD 时兜底
+                    )
+                )
+                .build()
+            val vc = VideoCapture.Builder(recorder).build()
             videoCapture = vc
             groupBuilder = groupBuilder.addUseCase(vc)
         }
