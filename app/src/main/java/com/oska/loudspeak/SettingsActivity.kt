@@ -83,6 +83,41 @@ class SettingsActivity : AppCompatActivity() {
             sp
         })
 
+        // PC 服务端两个地址（§3.3 双通道）：识别 8010 + 判定 11434（Qwen）
+        // 现阶段只显示/可改 IP；真正的收发在 PC-3 批次接入
+        root.addView(label("PC 服务端地址（手机与 PC 连同一路由器；PC 迁移只改这里）"))
+        val tvPc = TextView(this).apply {
+            textSize = 16f; setTextColor(0xFFFFFFFF.toInt()); setPadding(0, pad / 3, 0, pad / 4)
+        }
+        fun refreshPc() {
+            val ip = Prefs.pcIp(this@SettingsActivity)
+            tvPc.text = "语音识别 ASR：http://$ip:${Prefs.pcAsrPort(this@SettingsActivity)}\n" +
+                    "判定 Qwen：http://$ip:${Prefs.pcLlmPort(this@SettingsActivity)}\n" +
+                    "（端口与 token 在 PC 的 config.yaml；通道收发待 PC-3 接入）"
+        }
+        refreshPc()
+        root.addView(tvPc)
+        val btnPcIp = Button(this).apply {
+            text = "改 PC 的 IP"
+            setOnClickListener {
+                val input = android.widget.EditText(this@SettingsActivity).apply {
+                    setText(Prefs.pcIp(this@SettingsActivity))
+                    setSelection(text.length)
+                }
+                AlertDialog.Builder(this@SettingsActivity)
+                    .setTitle("PC 的局域网 IP")
+                    .setMessage("在 PC 上跑 start-server.bat 或 ipconfig 查 IPv4，形如 192.168.3.15")
+                    .setView(input)
+                    .setPositiveButton("保存") { _, _ ->
+                        val ip = input.text.toString().trim()
+                        if (ip.isNotEmpty()) { Prefs.setPcIp(this@SettingsActivity, ip); refreshPc() }
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+        }
+        root.addView(btnPcIp)
+
         // 模型（§5.4 SAF 导入 → 拷到 app 私有目录供 ONNX 直接读路径）
         tvModelStatus = TextView(this).apply { textSize = 15f; setTextColor(0xFFFFFFFF.toInt()) }
         root.addView(label("模型（SenseVoice int8，必装约 233MB）"))

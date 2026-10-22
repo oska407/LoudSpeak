@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底部按钮文字：可用=近黑（压在绿底上）；不可用=灰蓝（压在深灰底上，仍可读） -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="#FF8FA0AC" />
+    <item android:color="#FF08170B" />
+</selector>

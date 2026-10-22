@@ -48,6 +48,15 @@ object Prefs {
     fun firstRunDone(ctx: Context): Boolean = sp(ctx).getBoolean("firstRunDone", false)
     fun setFirstRunDone(ctx: Context) = sp(ctx).edit().putBoolean("firstRunDone", true).apply()
 
+    /**
+     * PC 服务端 IP（§3.3 双通道）。PC 换机 / 换 IP 时只改这一处：
+     * ASR = http://<ip>:8010，Qwen = http://<ip>:11434。
+     */
+    fun pcIp(ctx: Context): String = sp(ctx).getString("pcIp", "192.168.3.15")!!
+    fun setPcIp(ctx: Context, ip: String) = sp(ctx).edit().putString("pcIp", ip.trim()).apply()
+    fun pcAsrPort(ctx: Context): Int = sp(ctx).getInt("pcAsrPort", 8010)
+    fun pcLlmPort(ctx: Context): Int = sp(ctx).getInt("pcLlmPort", 11434)
+
     /** 模型目录（app 私有拷贝工作区，SAF 导入后落地于此） */
     fun modelsDir(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/models" } ?: "${ctx.filesDir.absolutePath}/models"

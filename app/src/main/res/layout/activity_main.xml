@@ -117,21 +117,26 @@
                 android:textColor="@color/label"
                 android:textSize="22sp" />
 
-            <!-- 第 4 行 七键两组：停止/暂停/录音/播放 + 历史/设置/模式 -->
+            <!-- 第 4 行 七键两组：停止/暂停/录音/播放 + 历史/设置/模式
+                 七键等分（layout_weight=1，见 @style/Btn）：任何屏幕宽度都不会被挤出屏 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="144"
                 android:layout_marginTop="4dp"
+                android:baselineAligned="false"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
                 <Button android:id="@+id/btnStop" style="@style/Btn" android:enabled="false" android:text="停止" />
                 <Button android:id="@+id/btnPause" style="@style/Btn" android:enabled="false" android:text="暂停" />
-                <Button android:id="@+id/btnRec" style="@style/Btn" android:text="录音" />
+                <Button android:id="@+id/btnRec" style="@style/Btn" android:layout_weight="1.3" android:text="录音" />
                 <Button android:id="@+id/btnPlay" style="@style/Btn" android:enabled="false" android:text="播放" />
 
-                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                <!-- 组间距（不参与等分） -->
+                <View
+                    android:layout_width="3dp"
+                    android:layout_height="1dp" />
 
                 <Button android:id="@+id/btnHistory" style="@style/Btn" android:text="历史" />
                 <Button android:id="@+id/btnSettings" style="@style/Btn" android:text="设置" />

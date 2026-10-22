@@ -33,6 +33,8 @@ import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.oska.loudspeak.core.AsrEngine
 import com.oska.loudspeak.core.AudioEngine
 import com.oska.loudspeak.core.CrashReporter
@@ -124,6 +126,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // 设计约定「无顶部状态条」：藏掉系统状态栏，四行多出约 47dp（§6.1）
+        WindowCompat.getInsetsController(window, window.decorView)
+            .hide(WindowInsetsCompat.Type.statusBars())
+
         // 首次引导（§12.1）：只出现一次
         if (!Prefs.firstRunDone(this)) {
             startActivity(Intent(this, FirstRunActivity::class.java))
@@ -180,8 +186,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 点击屏幕任意处立即消退红晕（§7.3）
-        glow.setOnClickListener { glow.glow.clearNow() }
+        // 红晕消退改为在 dispatchTouchEvent 里顺带处理（§7.3）。
+        // ⚠️ 绝不能给红晕层挂点击监听：它整屏盖在内容之上，一旦 clickable 就会吞掉
+        // ACTION_DOWN，底部七键全部按不动（真机「点录音没反应」即此）。
 
         wave.wf.onSeek = { p -> seekPlayback(p) }
         btnSkipReplay.setOnClickListener { endReplay(showDiagnosis = true) }
@@ -195,7 +202,23 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (state == "idle") { mode = Prefs.getMode(this); updateModeBadge() }
+        if (state == "idle") {
+            mode = Prefs.getMode(this); updateModeBadge()
+            // 从「设置」装完模型回来时，把提示刷新成真实状态
+            if (sentences.isEmpty()) idleHint()
+        }
+    }
+
+    /** 空白文字区的提示：模型没就绪时直接说清缺什么，而不是一闪而过的 Toast */
+    private fun idleHint() {
+        if (sentences.isNotEmpty()) return
+        tvText.text = if (asr.available) "（点「录音」开始练习）" else "还不能开始：${asr.status}\n（点底部「设置」→ 扫描模型）"
+    }
+
+    /** 点击屏幕任意处立即消退红晕（§7.3）——只看不改事件流向，七键照常收得到点击 */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && ::glow.isInitialized) glow.glow.clearNow()
+        return super.dispatchTouchEvent(ev)
     }
 
     // ================= 状态机（§6.4） =================
@@ -229,6 +252,8 @@ class MainActivity : AppCompatActivity() {
     private fun onRec() {
         if (state != "idle") return
         if (!asr.available) {
+            // Toast 一闪而过；文字区常驻提示，避免「点了没反应」的错觉
+            idleHint()
             Toast.makeText(this, "ASR 未就绪：${asr.status}", Toast.LENGTH_LONG).show()
             if (asr.status.contains("缺模型")) startActivity(Intent(this, SettingsActivity::class.java))
             return

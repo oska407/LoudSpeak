@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底部按钮底色：可用=主题绿；不可用=深灰（在深色背景上仍看得出「这里有按键」） -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="#FF2C3841" />
+    <item android:color="@color/accent" />
+</selector>
