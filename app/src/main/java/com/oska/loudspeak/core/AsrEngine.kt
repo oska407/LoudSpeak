@@ -37,7 +37,7 @@ class AsrEngine(private val modelsDir: String) {
             if (model.length() < 1_000_000) { available = false; status = "模型文件异常（${model.length() / 1_000_000}MB）"; return false }
             status = "加载中…"
             val config = OfflineRecognizerConfig(
-                featureConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
+                featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
                 modelConfig = OfflineModelConfig(
                     modelType = "sense-voice",
                     tokens = tokens.absolutePath,

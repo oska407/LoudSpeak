@@ -10,10 +10,11 @@ import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.util.Rational
 import android.util.Size
 import android.view.MotionEvent
+import android.view.Surface
 import android.view.View
-import android.view.View.LAYOUT_DIRECTION_LTR
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -320,7 +321,7 @@ class MainActivity : AppCompatActivity() {
                 val preview = Preview.Builder().setTargetResolution(Size(1280, 720)).build()
                 preview.setSurfaceProvider(previewView.surfaceProvider)
                 val groupBuilder = UseCaseGroup.Builder()
-                    .setViewPort(ViewPort.Builder(androidx.camera.core.Rational(3, 4), LAYOUT_DIRECTION_LTR).build())
+                    .setViewPort(ViewPort.Builder(android.util.Rational(3, 4), Surface.ROTATION_0).setLayoutDirection(View.LAYOUT_DIRECTION_LTR).build())
                     .addUseCase(preview)
                 if (record) {
                     val recorder = Recorder.Builder().build()
@@ -424,7 +425,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun appendSep(sb: SpannableStringBuilder, chapter: Int) {
         val st = sb.length
-        sb.append("\n──── ").append(chapter).append(":00 ────\n")
+        sb.append("\n──── ").append(chapter.toString()).append(":00 ────\n")
         sb.setSpan(ForegroundColorSpan(0xFF37474F.toInt()), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
@@ -462,7 +463,7 @@ class MainActivity : AppCompatActivity() {
 
         // ①② 档落盘 audio.wav；③④ 档一个字节都不写（§10.1）
         if (dir != null && pcm != null && (wasMode == Prefs.MODE_FULL || wasMode == Prefs.MODE_AUDIO)) {
-            val wav = AudioEngine(vadSilenceMs = 800).toWav(pcm)
+            val wav = AudioEngine(vadSilenceMs = 800, onFrame = { _, _ -> }, onSentence = { _, _, _ -> }).toWav(pcm)
             asrExecutor.execute {
                 try { File(dir, "audio.wav").writeBytes(wav) } catch (_: Exception) {}
             }

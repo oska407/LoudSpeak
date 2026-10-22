@@ -53,15 +53,17 @@ object CrashReporter {
         }
     }
 
-    private fun memSnapshot(): String = try {
-        val am = appCtx?.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return "n/a"
-        val mi = ActivityManager.MemoryInfo()
-        am.getMemoryInfo(mi)
-        val pid = android.os.Process.myPid()
-        val pmi = am.getProcessMemoryInfo(intArrayOf(pid))[0]
-        "total=%.2fGB avail=%.2fGB pss=%.1fMB".format(
-            mi.totalMem / 1e9, mi.availMem / 1e9, pmi.totalPss / 1024f)
-    } catch (_: Exception) { "n/a" }
+    private fun memSnapshot(): String {
+        return try {
+            val am = appCtx?.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return "n/a"
+            val mi = ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mi)
+            val pid = android.os.Process.myPid()
+            val pmi = am.getProcessMemoryInfo(intArrayOf(pid))[0]
+            "total=%.2fGB avail=%.2fGB pss=%.1fMB".format(
+                mi.totalMem / 1e9, mi.availMem / 1e9, pmi.totalPss / 1024f)
+        } catch (_: Exception) { "n/a" }
+    }
 
     fun list(): List<File> = dir?.listFiles()?.filter { it.isFile }?.sortedByDescending { it.name } ?: emptyList()
 

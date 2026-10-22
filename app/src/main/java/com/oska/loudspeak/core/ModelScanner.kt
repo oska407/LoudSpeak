@@ -41,7 +41,7 @@ object ModelScanner {
         return found
     }
 
-    private fun walk(dir: File, depth: Int, counter: intArrayOf, hit: (File) -> Unit) {
+    private fun walk(dir: File, depth: Int, counter: IntArray, hit: (File) -> Unit) {
         if (depth > 4 || counter[0] > 500) return
         counter[0]++
         hit(dir)

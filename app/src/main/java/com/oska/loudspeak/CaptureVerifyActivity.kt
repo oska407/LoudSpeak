@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
 import android.os.Bundle
+import android.util.Rational
+import android.view.Surface
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -101,9 +104,9 @@ class CaptureVerifyActivity : AppCompatActivity() {
 
                 // ViewPort：预览与录制共享同一 3:4 裁切视场
                 val viewPort = ViewPort.Builder(
-                    androidx.camera.core.Rational(3, 4),
-                    View.LAYOUT_DIRECTION_LTR
-                ).build()
+                    android.util.Rational(3, 4),
+                    Surface.ROTATION_0
+                ).setLayoutDirection(View.LAYOUT_DIRECTION_LTR).build()
 
                 val group = UseCaseGroup.Builder()
                     .setViewPort(viewPort)
