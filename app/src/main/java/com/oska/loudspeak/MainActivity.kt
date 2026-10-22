@@ -34,6 +34,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.oska.loudspeak.core.AsrEngine
 import com.oska.loudspeak.core.AudioEngine
+import com.oska.loudspeak.core.CrashReporter
 import com.oska.loudspeak.core.DbMeter
 import com.oska.loudspeak.core.GlowOverlay
 import com.oska.loudspeak.core.LcdDbView
@@ -116,10 +117,16 @@ class MainActivity : AppCompatActivity() {
 
     private var state = "idle" // idle / recording / paused / replay / diag
     private var lastGlowAt = 0L
+    private var prompted10Min = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // 首次引导（§12.1）：只出现一次
+        if (!Prefs.firstRunDone(this)) {
+            startActivity(Intent(this, FirstRunActivity::class.java))
+        }
 
         previewView = findViewById(R.id.previewView)
         videoView = findViewById(R.id.videoView)
@@ -247,12 +254,19 @@ class MainActivity : AppCompatActivity() {
     private fun startRecording() {
         sessionStartedAt = System.currentTimeMillis()
         chaptersDrawn = 0
+        prompted10Min = false
         take = 1
         prevTakePronouns = 0
         sentences.clear()
         tvText.text = ""
         wave.wf.reset()
         glow.glow.clearNow()
+
+        // 热降频缓解（§13.2 措施 1）：亮度锁 50%、刷新率 60Hz；停止时恢复
+        window.attributes = window.attributes.apply {
+            screenBrightness = 0.5f
+            preferredRefreshRate = 60f
+        }
 
         // ①② 档建会话目录；③④ 档一个字节都不写（§10.1）
         sessionDir = if (mode == Prefs.MODE_FULL || mode == Prefs.MODE_AUDIO)
@@ -273,11 +287,21 @@ class MainActivity : AppCompatActivity() {
                     // 章节标记每 60 秒（§12.2 步 5）
                     val chapter = ((audio?.elapsedMs() ?: 0) / 60000).toInt()
                     if (chapter > chaptersDrawn) { chaptersDrawn = chapter; renderAll() }
+                    // 连续录满 10 分钟：非阻断提示，不自动停（§13.2 措施 4）
+                    if (!prompted10Min && (audio?.elapsedMs() ?: 0) >= 10 * 60_000L) {
+                        prompted10Min = true
+                        AlertDialog.Builder(this)
+                            .setMessage("已录 10 分钟，要不要先停一下？")
+                            .setPositiveButton("继续录", null)
+                            .setNeutralButton("先停下") { _, _ -> onStopBtn(emotional = false) }
+                            .show()
+                    }
                 }
             },
             onSentence = { pcm, t0, t1 ->
                 asrExecutor.execute {
                     val text = asr.transcribe(pcm)
+                    if (text == null) CrashReporter.report("error", "ASR 单句转写失败/为空 t0=$t0")
                     main.post { onAsrResult(text, t0, t1) }
                 }
             }
@@ -308,6 +332,7 @@ class MainActivity : AppCompatActivity() {
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, groupBuilder.build())
                 if (record) startVideoSegment()
             } catch (e: Exception) {
+                CrashReporter.report("error", "相机绑定失败 mode=$mode", e)
                 Toast.makeText(this, "相机启动失败：${e.message}", Toast.LENGTH_SHORT).show()
             }
         }, ContextCompat.getMainExecutor(this))
@@ -329,6 +354,7 @@ class MainActivity : AppCompatActivity() {
                 .withAudioEnabled()
                 .start(ContextCompat.getMainExecutor(this)) { }
         } catch (e: Exception) {
+            CrashReporter.report("error", "录像启动失败 seg=$videoSegIndex", e)
             Toast.makeText(this, "录像启动失败：${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -427,6 +453,11 @@ class MainActivity : AppCompatActivity() {
         audio = null
         state = "idle"
         glow.glow.clearNow()
+        // 恢复屏幕亮度与刷新率（§13.2）
+        window.attributes = window.attributes.apply {
+            screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            preferredRefreshRate = 0f
+        }
         updateButtons()
 
         // ①② 档落盘 audio.wav；③④ 档一个字节都不写（§10.1）

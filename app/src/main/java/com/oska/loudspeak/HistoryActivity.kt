@@ -1,5 +1,6 @@
 package com.oska.loudspeak
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -70,8 +71,15 @@ class HistoryActivity : AppCompatActivity() {
         root.addView(list, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        val back = Button(this).apply { text = "返回"; setOnClickListener { finish() } }
-        root.addView(back)
+        val back = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        back.addView(Button(this).apply {
+            text = "回收站"; setOnClickListener { startActivity(Intent(this@HistoryActivity, TrashActivity::class.java)) }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        back.addView(Button(this).apply {
+            text = "返回"; setOnClickListener { finish() }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(back, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
         load()
     }

@@ -44,6 +44,10 @@ object Prefs {
         return n
     }
 
+    /** 首次引导是否已完成（§12.1） */
+    fun firstRunDone(ctx: Context): Boolean = sp(ctx).getBoolean("firstRunDone", false)
+    fun setFirstRunDone(ctx: Context) = sp(ctx).edit().putBoolean("firstRunDone", true).apply()
+
     /** 模型目录（app 私有拷贝工作区，SAF 导入后落地于此） */
     fun modelsDir(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/models" } ?: "${ctx.filesDir.absolutePath}/models"

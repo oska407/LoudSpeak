@@ -86,6 +86,8 @@ class SettingsActivity : AppCompatActivity() {
         tvModelStatus = TextView(this).apply { textSize = 15f; setTextColor(0xFFFFFFFF.toInt()) }
         root.addView(label("模型（SenseVoice int8，必装约 233MB）"))
         root.addView(tvModelStatus)
+        val btnScan = Button(this).apply { text = "扫描模型（推荐：在常见位置自动找）" }
+        btnScan.setOnClickListener { scanModels() }
         val btnImport = Button(this).apply { text = "从文件管理器选择模型目录 (SAF)" }
         btnImport.setOnClickListener {
             startActivityForResult(
@@ -93,14 +95,16 @@ class SettingsActivity : AppCompatActivity() {
         }
         val btnCheck = Button(this).apply { text = "校验模型" }
         btnCheck.setOnClickListener { checkModel() }
-        root.addView(btnImport); root.addView(btnCheck)
+        root.addView(btnScan); root.addView(btnImport); root.addView(btnCheck)
 
         // 其它入口
+        val btnErr = Button(this).apply { text = "错误报告（调试用）" }
+        btnErr.setOnClickListener { startActivity(Intent(this, ErrorsActivity::class.java)) }
         val btnSelf = Button(this).apply { text = "系统自检 (B0)" }
         btnSelf.setOnClickListener { startActivity(Intent(this, SelfCheckActivity::class.java)) }
         val btnCapture = Button(this).apply { text = "采集验证 (B1)" }
         btnCapture.setOnClickListener { startActivity(Intent(this, CaptureVerifyActivity::class.java)) }
-        root.addView(btnSelf); root.addView(btnCapture)
+        root.addView(btnErr); root.addView(btnSelf); root.addView(btnCapture)
 
         val btnBack = Button(this).apply { text = "返回" }
         btnBack.setOnClickListener { finish() }
@@ -116,7 +120,52 @@ class SettingsActivity : AppCompatActivity() {
             append("目录：").append(Prefs.modelsDir(this@SettingsActivity)).append('\n')
             append("asr/model.int8.onnx：").append(
                 if (m?.isFile == true) "${m.length() / 1_000_000}MB ✓" else "✗ 缺失").append('\n')
-            append("asr/tokens.txt：").append(if (t?.isFile == true) "✓" else "✗ 缺失")
+            append("asr/tokens.txt：").append(if (t?.isFile == true) "✓" else "✗ 缺失").append('\n')
+            append(storageUsage())
+        }
+    }
+
+    private fun storageUsage(): String = try {
+        val sessions = java.io.File(Prefs.sessionsRoot(this))
+        val used = sessions.walkBottomUp().filter { it.isFile }.map { it.length() }.sum()
+        val free = sessions.usableSpace
+        "占用：%.2fGB · 剩余：%.2fGB%s".format(
+            used / 1e9, free / 1e9, if (free < 2e9) " ⚠剩余不足2GB" else "")
+    } catch (_: Exception) { "" }
+
+    /** 扫描常见位置找 model.int8.onnx + tokens.txt，列出候选让用户选（选中即拷入活动目录） */
+    private fun scanModels() {
+        tvModelStatus.text = "扫描中…（App 私有目录 / Download/SpeakClear 等）"
+        asrExecutor.execute {
+            val found = com.oska.loudspeak.core.ModelScanner.scan(this)
+            runOnUiThread {
+                if (found.isEmpty()) {
+                    tvModelStatus.text = buildString {
+                        append("没扫到模型。两种放法：\n")
+                        append("① 电脑 USB 把模型文件夹拷到：\n")
+                        append(Prefs.modelsDir(this@SettingsActivity)).append('\n')
+                        append("② 或用下面的 SAF 按钮选目录")
+                    }
+                    return@runOnUiThread
+                }
+                val labels = found.map { it.label() }.toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("找到 ${found.size} 个模型，选择一个")
+                    .setItems(labels) { _, which ->
+                        val f = found[which]
+                        tvModelStatus.text = "导入中…（约 230MB，请勿离开）"
+                        asrExecutor.execute {
+                            val ok = com.oska.loudspeak.core.ModelScanner.install(
+                                f.model, f.tokens, Prefs.modelsDir(this))
+                            runOnUiThread {
+                                tvModelStatus.text = if (ok) "✓ 已导入并设为当前模型" else "✗ 导入失败"
+                                refreshModelStatus()
+                            }
+                        }
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
         }
     }
 

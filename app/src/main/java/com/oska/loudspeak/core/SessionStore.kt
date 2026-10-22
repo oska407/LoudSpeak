@@ -134,4 +134,46 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             if (it.lastModified() + week < System.currentTimeMillis()) it.deleteRecursively()
         }
     }
+
+    // ---- 回收站明细（§11.4：逐条恢复 / 永久删除 / 清空） ----
+
+    class TrashItem(val dir: File, val deletedAt: Long)
+
+    fun listTrash(): List<TrashItem> =
+        File(root(), ".trash").listFiles()?.filter { it.isDirectory }
+            ?.map { TrashItem(it, it.lastModified()) }
+            ?.sortedByDescending { it.deletedAt } ?: emptyList()
+
+    fun restoreFromTrash(item: TrashItem): String? {
+        val target = File(root(), item.dir.name.substringBeforeLast('-') + "-" +
+            java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(java.util.Date(System.currentTimeMillis())))
+        return try {
+            if (!item.dir.renameTo(target)) "恢复失败（目录被占用？）"
+            else {
+                // 重新登记索引
+                val meta = File(target, "meta.json")
+                if (meta.isFile) {
+                    val o = JSONObject(meta.readText())
+                    indexSession(Record(o.getString("sessionId"), o.optLong("startedAt"),
+                        o.optLong("durationMs"),
+                        o.getJSONObject("stats").optInt("pronounCount"),
+                        o.getJSONObject("stats").optInt("completeCount"),
+                        o.getJSONObject("stats").optInt("incompleteCount"),
+                        o.getJSONObject("stats").optInt("selfMarkedCount"),
+                        o.optString("exitKind", "normal"), target.absolutePath))
+                }
+                null
+            }
+        } catch (e: Exception) { "恢复失败：${e.message?.take(80)}" }
+    }
+
+    fun purgeTrashItem(item: TrashItem): Boolean = item.dir.deleteRecursively()
+
+    fun emptyTrash(): Int {
+        val trash = File(root(), ".trash")
+        var n = 0
+        trash.listFiles()?.forEach { if (it.deleteRecursively()) n++ }
+        return n
+    }
 }
