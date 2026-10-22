@@ -20,10 +20,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LoudSpeak">
 
-        <!-- B0/B1 验证期入口：主界面（含「系统自检」按钮） -->
+        <!-- B0/B1 验证期入口：主界面（含「系统自检」按钮）
+             ⚠️ configChanges 必须声明：默认转屏会销毁重建 Activity，
+             录到一半被人转一下手机，音频/已识别的整句/计时全部清零。
+             自己处理旋转见 MainActivity.onConfigurationChanged。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
             android:screenOrientation="sensorLandscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -37,10 +41,12 @@
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
-        <!-- B1 采集验证页（CameraX 预览 + 录制 + 实测分辨率） -->
+        <!-- B1 采集验证页（CameraX 预览 + 录制 + 实测分辨率）
+             同上：录制中途转屏不能重建 -->
         <activity
             android:name=".CaptureVerifyActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
             android:screenOrientation="sensorLandscape" />
 
         <!-- 模式选择（§6.4 模式键） -->

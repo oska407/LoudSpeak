@@ -3,6 +3,7 @@ package com.oska.loudspeak
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
@@ -180,7 +181,8 @@ class MainActivity : AppCompatActivity() {
         // 取景：用 TextureView 模式 —— 取景窗口要平移 PreviewView，SurfaceView 在部分机型上
         // 平移/裁剪不生效（会漏出窗口外的东西），TextureView 没有这个毛病。
         previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-        previewBox.bias = Prefs.cropBias(this)
+        previewBox.bias = Prefs.cropBias(this, curRotation())
+        if (!Prefs.hasCropBias(this, curRotation())) autoFrame()   // 这个朝向还没标定过
         setupPreviewDrag()
 
         // 长按停止 2 秒 = 情绪退出（§12.5）
@@ -394,8 +396,12 @@ class MainActivity : AppCompatActivity() {
     private var dragStartX = 0f
     private var dragStartBias = 0f
     private var biasHintShown = false
+
+    /** 当前屏幕朝向（Surface.ROTATION_*），取景与录制朝向都按它存/取 */
+    private fun curRotation(): Int = Prefs.displayRotation(this)
+
     private val resetBias = Runnable {
-        Prefs.setCropBias(this, 0f, manual = false)
+        Prefs.setCropBias(this, curRotation(), 0f, manual = false)
         previewBox.bias = 0f
         autoFrame()
         Toast.makeText(this, "取景已恢复自动", Toast.LENGTH_SHORT).show()
@@ -431,7 +437,7 @@ class MainActivity : AppCompatActivity() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(resetBias)
                     if (abs(previewBox.bias - dragStartBias) > 0.02f) {
-                        Prefs.setCropBias(this, previewBox.bias, manual = true)
+                        Prefs.setCropBias(this, curRotation(), previewBox.bias, manual = true)
                         if (!biasHintShown) {
                             biasHintShown = true
                             Toast.makeText(this, "取景位置已记住（长按画面恢复自动）", Toast.LENGTH_SHORT).show()
@@ -445,11 +451,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * 手机转向（横屏正 ↔ 反）。
+     *
+     * ⚠️ Manifest 里给 MainActivity 声明了 configChanges，所以这里**不会重建 Activity**。
+     * 为什么必须自己接住：默认行为是销毁重建，录到一半有人转下手机，音频采集、
+     * 累计的整句、这场会话的计时统统归零 —— 孩子白录一场。这个代价不能接受。
+     * 代价是布局得自己扛：好在布局全是权重流式的（左右 26/73、四行 142/128/306/144），
+     * 正反横屏尺寸一样（都是 1604×720），也没有横竖两套资源，重建不出尺寸问题。
+     *
+     * 转向后要做两件事：
+     * 1. 取景套用**这个朝向**标定过的值；没标定过（第一次转过来）就等画面转完了重新标定。
+     * 2. 告诉 VideoCapture 朝向变了 —— 否则 mp4 里的画面是歪的。
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Ui.hideStatusBar(this)
+        val rot = curRotation()
+        previewBox.bias = Prefs.cropBias(this, rot)
+        if (!Prefs.hasCropBias(this, rot) && previewView.visibility == View.VISIBLE) {
+            previewView.postDelayed({ autoFrame() }, 900L)   // 等 Preview 把画面回转过来
+        }
+        try {
+            // 正在录的时候改 targetRotation 可能抛异常 —— 吞掉，最多这一段 mp4 朝向不对，
+            // 音频（审批走 AudioRecord）完全不受影响。
+            videoCapture?.targetRotation = rot
+        } catch (e: Exception) {
+            CrashReporter.report("warn", "转向后未能更新录制朝向 rot=$rot", e)
+        }
+    }
+
+    /**
      * 自动标定取景偏移：抓一帧，按肤色质心找脸的位置，把取景窗口平移过去让脸居中。
      * 连做 3 次（每次间隔递增）收敛一下，仍判不出来就保持不动 —— 不猜。
      */
     private fun autoFrame(attempt: Int = 0) {
-        if (Prefs.cropBiasManual(this)) return
+        if (Prefs.cropBiasManual(this, curRotation())) return
         main.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
             val bmp = try { previewView.bitmap } catch (e: Exception) { null }
@@ -462,7 +498,7 @@ class MainActivity : AppCompatActivity() {
                 val x0 = (fx * tw - cw / 2f).coerceIn(0f, sl)
                 val b = (1f - 2f * x0 / sl).coerceIn(-1f, 1f)
                 previewBox.bias = b
-                Prefs.setCropBias(this, b)
+                Prefs.setCropBias(this, curRotation(), b)
             }
             if (attempt < 2) autoFrame(attempt + 1)
         }, 900L + attempt * 500L)
@@ -703,7 +739,8 @@ class MainActivity : AppCompatActivity() {
         store.writeTranscript(dir, sentences)
         store.writeMeta(dir, mode, sessionStartedAt, System.currentTimeMillis(), elapsedMs, take,
             sentences.sumOf { it.pronouns.size }, complete, incomplete, selfMarked, exitKind,
-            modelsNote = if (asr.available) "纯规则模式" else asr.status)
+            modelsNote = if (asr.available) "纯规则模式" else asr.status,
+            cropBias = previewBox.bias)   // 回放按「录的时候」的取景显示
         store.indexSession(SessionStore.Record(dir.name, sessionStartedAt, elapsedMs,
             sentences.sumOf { it.pronouns.size }, complete, incomplete, selfMarked, exitKind,
             dir.absolutePath))
@@ -753,6 +790,10 @@ class MainActivity : AppCompatActivity() {
                 if (mode == Prefs.MODE_FULL) {
                     val video = dir.listFiles()?.firstOrNull { it.name.startsWith("video_seg") }
                     if (video != null) {
+                        // 回放取景 = 录这段时的偏移（不是「现在」的偏移）：
+                        // mp4 是全幅，偏移只能别的途径带上，落在 meta.json 里。
+                        replaySavedBias = previewBox.bias
+                        previewBox.bias = readSessionBias(dir) ?: previewBox.bias
                         videoView.visibility = View.VISIBLE
                         previewView.visibility = View.GONE
                         videoView.setVideoPath(video.absolutePath)
@@ -794,7 +835,17 @@ class MainActivity : AppCompatActivity() {
         audioPlayer?.seekTo(target)
     }
 
+    /** 回放前临时换成了会话取景，回放完要还原成「当前」的（否则下一句 preview 会偏） */
+    private var replaySavedBias: Float? = null
+
+    private fun readSessionBias(dir: File): Float? = try {
+        val o = org.json.JSONObject(File(dir, "meta.json").readText())
+        if (o.has("cropBias")) o.optDouble("cropBias").toFloat() else null
+    } catch (_: Exception) { null }
+
     private fun endReplay(showDiagnosis: Boolean) {
+        replaySavedBias?.let { previewBox.bias = it }
+        replaySavedBias = null
         btnSkipReplay.visibility = View.GONE
         try { videoView.stopPlayback() } catch (_: Exception) {}
         try { audioPlayer?.release() } catch (_: Exception) {}

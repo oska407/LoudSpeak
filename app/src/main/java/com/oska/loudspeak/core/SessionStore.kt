@@ -41,10 +41,14 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         return dir
     }
 
-    /** 写 meta.json（§10.2） */
+    /**
+     * 写 meta.json（§10.2）。
+     * cropBias：录这一条时的取景偏移 —— 写在 mp4 里的是全幅画面（见 MEMORY 约定），
+     * 所以回放必须按**当时**的偏移显示，不能拿「现在」的偏移。
+     */
     fun writeMeta(dir: File, mode: String, startedAt: Long, endedAt: Long, durationMs: Long,
                   take: Int, pronouns: Int, complete: Int, incomplete: Int, selfMarked: Int,
-                  exitKind: String, modelsNote: String) {
+                  exitKind: String, modelsNote: String, cropBias: Float) {
         val o = JSONObject()
             .put("sessionId", dir.name)
             .put("mode", mode)
@@ -58,8 +62,9 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 .put("pronounCount", pronouns).put("completeCount", complete)
                 .put("incompleteCount", incomplete).put("selfMarkedCount", selfMarked))
             .put("exitKind", exitKind)
+            .put("cropBias", cropBias.toDouble())
             .put("chapters", JSONArray())
-            .put("schemaVersion", 1)
+            .put("schemaVersion", 2)
         File(dir, "meta.json").writeText(o.toString(2))
     }
 

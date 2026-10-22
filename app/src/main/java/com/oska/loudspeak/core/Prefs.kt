@@ -2,6 +2,7 @@ package com.oska.loudspeak.core
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.view.WindowManager
 
 /**
  * 全局配置（SharedPreferences 落地）。
@@ -74,13 +75,33 @@ object Prefs {
             ?: "${ctx.filesDir.absolutePath}/SpeakClear/sessions"
 
     /**
-     * 取景水平偏移：-1 = 露出画面最右一段，0 = 正中，+1 = 露出最左一段。
-     * 自动标定（画面里肤色质心）会写这里；用户手拖过就以手拖的为准，不再自动改。
+     * 取景水平偏移：**按屏幕朝向分别存**（Surface.ROTATION_0/90/180/270）。
+     * -1 = 露出画面最右一段，0 = 正中，+1 = 露出最左一段。
+     *
+     * ⚠️ 为什么要分朝向：本 app 是 sensorLandscape（允许横屏正反两个方向）。
+     * 手机掉个头，镜头相对孩子的左右就翻过来了，同一个偏移量在另一头一定是错的。
+     * 这里**不猜映射关系**（是取反还是别的，取决于镜像 + 旋转怎么叠，各机型还不统一），
+     * 而是一头一套：自动标定（画面里肤色质心）写这里；用户手拖过就以手拖的为准，不再自动改。
      */
-    fun cropBias(ctx: Context): Float = sp(ctx).getFloat("cropBias", 0f)
-    fun setCropBias(ctx: Context, v: Float, manual: Boolean = false) {
-        sp(ctx).edit().putFloat("cropBias", v.coerceIn(-1f, 1f)).putBoolean("cropBiasManual", manual).apply()
+    fun displayRotation(ctx: Context): Int {
+        val r = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            ctx.display?.rotation
+        } else {
+            @Suppress("DEPRECATION")
+            (ctx.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.defaultDisplay?.rotation
+        }
+        return r ?: 0
     }
+
+    private fun biasKey(rot: Int) = "cropBias_r$rot"
+    private fun manualKey(rot: Int) = "cropBiasManual_r$rot"
+
+    fun cropBias(ctx: Context, rot: Int): Float = sp(ctx).getFloat(biasKey(rot), 0f)
+    fun setCropBias(ctx: Context, rot: Int, v: Float, manual: Boolean = false) =
+        sp(ctx).edit().putFloat(biasKey(rot), v.coerceIn(-1f, 1f))
+            .putBoolean(manualKey(rot), manual).apply()
     /** 用户是否手动拖过取景（拖过就不再自动标定） */
-    fun cropBiasManual(ctx: Context): Boolean = sp(ctx).getBoolean("cropBiasManual", false)
+    fun cropBiasManual(ctx: Context, rot: Int): Boolean = sp(ctx).getBoolean(manualKey(rot), false)
+    /** 这个朝向标定过吗 —— 没标定过必须重新自动标定，绝不能拿另一个朝向的值顶上 */
+    fun hasCropBias(ctx: Context, rot: Int): Boolean = sp(ctx).contains(biasKey(rot))
 }
