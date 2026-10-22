@@ -3,6 +3,7 @@ package com.oska.loudspeak.core
 import android.content.Context
 import android.content.SharedPreferences
 import android.view.WindowManager
+import java.io.File
 
 /**
  * 全局配置（SharedPreferences 落地）。
@@ -37,6 +38,25 @@ object Prefs {
     fun glowDebounceSec(ctx: Context): Int = sp(ctx).getInt("glowDebounceSec", 3)
     fun setGlowDebounceSec(ctx: Context, v: Int) = sp(ctx).edit().putInt("glowDebounceSec", v.coerceIn(1, 10)).apply()
 
+    // ---- 识别标注体系（§R9）：色彩 + 符号，逐项可关 ----
+    fun annotEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("annotEnabled", true)
+    fun setAnnotEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotEnabled", v).apply()
+    fun annotPronouns(ctx: Context): Boolean = sp(ctx).getBoolean("annotPronouns", true)
+    fun setAnnotPronouns(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotPronouns", v).apply()
+    fun annotFillers(ctx: Context): Boolean = sp(ctx).getBoolean("annotFillers", true)
+    fun setAnnotFillers(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotFillers", v).apply()
+    fun annotIssues(ctx: Context): Boolean = sp(ctx).getBoolean("annotIssues", true)
+    fun setAnnotIssues(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotIssues", v).apply()
+
+    /** 一次性读出整套标注偏好 */
+    fun annotationPrefs(ctx: Context): AnnotationPrefs =
+        AnnotationPrefs(
+            enabled = annotEnabled(ctx),
+            pronouns = annotPronouns(ctx),
+            fillers = annotFillers(ctx),
+            issues = annotIssues(ctx)
+        )
+
     /** 第 N 次会话计数（所有档位都计，§12.0） */
     fun sessionCount(ctx: Context): Int = sp(ctx).getInt("sessionCount", 0)
     fun incSessionCount(ctx: Context): Int {
@@ -64,6 +84,12 @@ object Prefs {
 
     /** 本地 Qwen 目录（models 下的 llm 子目录，放 .gguf） */
     fun llmDir(ctx: Context): String = "${modelsDir(ctx)}/llm"
+
+    /** <models>/llm 下最新的那个 .gguf（本地 Qwen 推理用；无则 null） */
+    fun newestLlm(ctx: Context): File? = try {
+        File(llmDir(ctx)).listFiles { f: File -> f.isFile && f.name.endsWith(".gguf", true) }
+            ?.maxByOrNull { it.lastModified() }
+    } catch (_: Exception) { null }
 
     /** 本地 Qwen 开关：默认关（§5.7 可选、录后按需加载、判完立即释放） */
     fun llmEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("llmEnabled", false)

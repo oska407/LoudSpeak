@@ -173,6 +173,37 @@ class SettingsActivity : AppCompatActivity() {
             sp
         })
 
+        // 识别标注体系（§R9）：色彩 + 符号，逐项可关；附图例
+        root.addView(label("识别标注（自动，不用提示词；关掉则只显示纯文字）"))
+        root.addView(android.widget.Switch(this).apply {
+            isChecked = Prefs.annotEnabled(this@SettingsActivity)
+            text = "  开启标注"; textSize = 16f; setTextColor(0xFFFFFFFF.toInt())
+            setOnCheckedChangeListener { _, v -> Prefs.setAnnotEnabled(this@SettingsActivity, v) }
+        })
+        root.addView(android.widget.Switch(this).apply {
+            isChecked = Prefs.annotPronouns(this@SettingsActivity)
+            text = "  代词标红 + 下划线"; textSize = 16f; setTextColor(0xFFFFFFFF.toInt())
+            setOnCheckedChangeListener { _, v -> Prefs.setAnnotPronouns(this@SettingsActivity, v) }
+        })
+        root.addView(android.widget.Switch(this).apply {
+            isChecked = Prefs.annotFillers(this@SettingsActivity)
+            text = "  口头禅淡化 + 删除线"; textSize = 16f; setTextColor(0xFFFFFFFF.toInt())
+            setOnCheckedChangeListener { _, v -> Prefs.setAnnotFillers(this@SettingsActivity, v) }
+        })
+        root.addView(android.widget.Switch(this).apply {
+            isChecked = Prefs.annotIssues(this@SettingsActivity)
+            text = "  句式问题橙色提示"; textSize = 16f; setTextColor(0xFFFFFFFF.toInt())
+            setOnCheckedChangeListener { _, v -> Prefs.setAnnotIssues(this@SettingsActivity, v) }
+        })
+        root.addView(Button(this).apply {
+            text = "标注图例"
+            setOnClickListener {
+                AlertDialog.Builder(this@SettingsActivity).setTitle("识别标注图例")
+                    .setMessage(com.oska.loudspeak.core.Annotator.legend())
+                    .setPositiveButton("知道了", null).show()
+            }
+        })
+
         // PC 服务端两个地址（§3.3 双通道）：识别 8010 + 判定 11434（Qwen）
         // 现阶段只显示/可改 IP；真正的收发在 PC-3 批次接入
         root.addView(label("PC 服务端地址（手机与 PC 连同一路由器；PC 迁移只改这里）"))
@@ -315,7 +346,8 @@ class SettingsActivity : AppCompatActivity() {
                 if (llm != null) "${llm.name}（${llm.length() / 1_000_000}MB）✓"
                 else "✗ 缺（可选，放 .gguf 到 " + Prefs.llmDir(this@SettingsActivity) + "）").append('\n')
             append("Qwen 开关：").append(if (Prefs.llmEnabled(this@SettingsActivity)) "开" else "关").append('\n')
-            append("注：本地 Qwen 目前只做到「文件就位 + 状态」；GGUF 推理引擎还没接（PC-3 批次）。\n")
+            append("注：本地 Qwen 已接「离线判定」管线——开启后用规则后端一定能判；\n")
+            append("    若拷入了 Qwen GGUF 且真机装有推理库，会自动升级为模型评语，否则回退规则。\n")
             append(storageUsage())
         }
     }

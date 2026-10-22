@@ -33,12 +33,29 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         val selfMarkedCount: Int, val exitKind: String, val dirPath: String
     )
 
-    /** 新建会话目录（仅 ①② 档调用；③④ 档不建 §10.1） */
+    /**
+     * 新建会话目录（仅 ①② 档调用；③④ 档不建 §10.1）。
+     * 命名：yyyyMMdd-HHmm（年-月-日-时-分，见 R9「视频音频文字识别一起存储」）。
+     * 同一分钟内的第二条（或同一分钟 ①② 档各一条）会追加 -2 / -3 …… 防止互相覆盖。
+     */
     fun newSessionDir(startedAt: Long): File {
-        val name = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date(startedAt))
-        val dir = File(root(), name)
-        dir.mkdirs()
-        return dir
+        val base = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date(startedAt))
+        var n = 0
+        while (true) {
+            val name = if (n == 0) base else "$base-$n"
+            val dir = File(root(), name)
+            if (!dir.exists()) { dir.mkdirs(); return dir }
+            n++
+        }
+    }
+
+    /** 把会话目录名（yyyyMMdd-HHmm 或带 -N 后缀）解析成人读的时间标签 */
+    fun sessionLabel(sessionId: String): String {
+        val base = sessionId.substringBefore('-')
+        return try {
+            val d = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).parse(base) ?: return sessionId
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(d)
+        } catch (_: Exception) { sessionId }
     }
 
     /**
@@ -107,6 +124,41 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             }
         }
         return out
+    }
+
+    /**
+     * 从 transcript.json 重建句子序列（查看/回放页用，§R9）。
+     * 还原 text / uncertain / pronouns / flags / selfMarked，足够 Annotator 重新排版。
+     */
+    fun loadSentences(dir: File): List<RuleEngine.Sentence> {
+        val f = File(dir, "transcript.json")
+        if (!f.isFile) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(f.readText())
+            val out = ArrayList<RuleEngine.Sentence>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val text = o.optString("text", "?")
+                val uncertain = o.optBoolean("uncertain", text == "?")
+                val s = RuleEngine.Sentence(
+                    index = o.optInt("index", i),
+                    tStartMs = o.optLong("tStartMs"),
+                    tEndMs = o.optLong("tEndMs"),
+                    text = if (uncertain) "?" else text,
+                    uncertain = uncertain,
+                    selfMarked = o.optBoolean("selfMarked", false)
+                )
+                val pr = o.optJSONArray("pronouns")
+                if (pr != null) for (j in 0 until pr.length()) {
+                    val p = pr.getJSONObject(j)
+                    s.pronouns.add(p.optString("word") to p.optInt("at"))
+                }
+                val fl = o.optJSONArray("flags")
+                if (fl != null) for (j in 0 until fl.length()) s.flags.add(fl.getString(j))
+                out.add(s)
+            }
+            out
+        } catch (e: Exception) { emptyList() }
     }
 
     /**

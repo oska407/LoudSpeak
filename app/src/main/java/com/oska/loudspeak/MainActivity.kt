@@ -43,6 +43,8 @@ import com.oska.loudspeak.core.DbMeter
 import com.oska.loudspeak.core.GlowOverlay
 import com.oska.loudspeak.core.LcdDbView
 import com.oska.loudspeak.core.Prefs
+import com.oska.loudspeak.core.Annotator
+import com.oska.loudspeak.core.QwenJudge
 import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
 import com.oska.loudspeak.core.WaveformView
@@ -634,50 +636,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderAll() {
-        val sb = SpannableStringBuilder()
-        var lastChapter = 0
-        for (s in sentences) {
-            while (lastChapter < chaptersDrawn && lastChapter * 60000 < s.tEndMs) {
-                lastChapter++
-                appendSep(sb, lastChapter)
-            }
-            if (s.uncertain) {
-                val st = sb.length
-                sb.append("?")
-                sb.setSpan(ForegroundColorSpan(0xFF6E7B84.toInt()), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            } else {
-                var idx = 0
-                for ((w, pos) in s.pronouns.sortedBy { it.second }) {
-                    if (pos > idx) sb.append(s.text.substring(idx, pos))
-                    val rs = sb.length
-                    sb.append(w)
-                    sb.setSpan(ForegroundColorSpan(0xFFFF5252.toInt()), rs, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    idx = pos + w.length
-                }
-                if (idx < s.text.length) sb.append(s.text.substring(idx))
-            }
-            if (s.selfMarked) {
-                val ps = sb.length
-                sb.append("〔已自评〕")
-                sb.setSpan(ForegroundColorSpan(0xFF6E7B84.toInt()), ps, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            if (s.flags.isNotEmpty()) {
-                val ps = sb.length
-                sb.append("〔${s.flags.joinToString("·")}〕")
-                sb.setSpan(ForegroundColorSpan(0xFFFFB74D.toInt()), ps, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            // 句子之间**不硬换行**：连续从左往右排，排满一行由排版自己折行（像书写，§6 修订）。
-            // 原来每句补一个 "\n"，短句各占一行，右边半屏全空，读起来像清单不像话。
-            sb.append(" ")
-        }
-        if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
-        textArea.setContent(sb)
-    }
-
-    private fun appendSep(sb: SpannableStringBuilder, chapter: Int) {
-        val st = sb.length
-        sb.append("\n──── ").append(chapter.toString()).append(":00 ────\n")
-        sb.setSpan(ForegroundColorSpan(0xFF37474F.toInt()), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        // 标注体系（§R9）：色彩 + 符号，全部走 Annotator，开关来自设置
+        textArea.setContent(Annotator.build(sentences, chaptersDrawn, Prefs.annotationPrefs(this)))
     }
 
     /** 「整句」卡显示 说得完整的句数 / 总句数，后面那半用小一号灰字 */
@@ -780,10 +740,23 @@ class MainActivity : AppCompatActivity() {
 
     // ================= 整句判断 → 回放 → 诊断（§12.3 / §12.4） =================
 
+    /** 最近一次判定的总评语（诊断标题区展示用，§R9） */
+    private var lastJudgeOverall: String? = null
+
     private fun runJudgmentAndDiagnosis(elapsedMs: Long) {
         val count = Prefs.incSessionCount(this)   // ③④ 档同样计数（§12.0）
         asrExecutor.execute {
             RuleEngine.evaluate(sentences, l4Enabled = RuleEngine.l4Enabled(count))
+            // 离线自动判定（§R9）：规则后端默认工作；开了本地 Qwen 且 GGUF 就位则尝试升级，失败回退规则
+            val res = QwenJudge.judge(
+                sentences,
+                useLlm = Prefs.llmEnabled(this),
+                ggufPath = Prefs.newestLlm(this)?.absolutePath
+            )
+            lastJudgeOverall = res.overall
+            for (s in sentences) {
+                res.perSentence[s.index]?.let { if (it.isNotEmpty()) s.judge = it }
+            }
             main.post {
                 if (sessionDir != null) saveSession(elapsedMs, exitKind = "normal")
                 val hasProblem = sentences.any { it.isProblem }
@@ -898,16 +871,18 @@ class MainActivity : AppCompatActivity() {
             val improved = (prevTakePronouns - sentences.sumOf { it.pronouns.size }).coerceAtLeast(0)
             tvDiagnosisTitle.text = "第 $take 遍，你把 $improved 处「这个」说出了名字。"
         } else if (problems.isEmpty()) {
-            tvDiagnosisTitle.text = "这段里没有发现要改的句子，说得挺好。"
+            tvDiagnosisTitle.text = lastJudgeOverall ?: "这段里没有发现要改的句子，说得挺好。"
         } else {
-            tvDiagnosisTitle.text = "有 ${problems.size} 句可以更好："
+            // §R9：先给出整体评语（模型/规则生成），再列具体句子
+            val overall = lastJudgeOverall ?: Annotator.summary(sentences)
+            tvDiagnosisTitle.text = "$overall\n有 ${problems.size} 句可以更好："
             for (s in problems.take(6)) {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 6)
                 }
                 val tv = TextView(this).apply {
                     textSize = 17f; setTextColor(0xFFFFFFFF.toInt())
-                    text = "「${if (s.uncertain) "?" else s.text}」\n${s.followUp}"
+                    text = "「${if (s.uncertain) "?" else s.text}」\n${s.judge ?: s.followUp}"
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
                 }
                 val btn = Button(this).apply {

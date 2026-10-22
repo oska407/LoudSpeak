@@ -1,33 +1,40 @@
 package com.oska.loudspeak.core
 
-import android.animation.AnimatorSet
-import android.animation.ObjectAnimator
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
 import android.view.View
-import android.view.animation.LinearInterpolator
 
 /**
- * 红晕提醒（§7）：只在屏幕四周边缘（各一条向内渐隐的红色渐变带），中心完全干净；
- * 淡入 200ms → 保持 600ms → 淡出 400ms，共 1.2s；不拦截触控。
+ * 红晕提醒（§7 / §R9）：像游戏里「缺血」那样，只在屏幕四周边缘泛起一阵呼吸般的红晕，
+ * 中心完全干净 —— 不影响看画面，也不拦截任何点击（画在 dispatchDraw 里，全屏盖层不挂监听）。
+ *
+ * 触发即「充血」：alpha 0→1→0 为一个呼吸，连做 3 次（约 3 秒）后自动消退；
+ * 点屏幕任意处可立即消退（dispatchTouchEvent 里顺带调用 clearNow）。
  */
 class GlowOverlay(private val v: View) {
     private var alpha = 0f
-    private var animator: AnimatorSet? = null
+    private var animator: ValueAnimator? = null
     private val paint = Paint()
 
     init { v.setLayerType(View.LAYER_TYPE_SOFTWARE, null) }
 
+    /** 触发一次缺血式呼吸（连 3 次，约 3 秒） */
     fun fire() {
         animator?.cancel()
-        val fadeIn = ObjectAnimator.ofFloat(this, "alpha", 0f, 1f).setDuration(200)
-        fadeIn.interpolator = LinearInterpolator()
-        val hold = ObjectAnimator.ofFloat(this, "alpha", 1f, 1f).setDuration(600)
-        val fadeOut = ObjectAnimator.ofFloat(this, "alpha", 1f, 0f).setDuration(400)
-        animator = AnimatorSet().apply {
-            playSequentially(fadeIn, hold, fadeOut)
+        // 0→1→0 一个来回 = 一次「充血/消退」；repeat 2 次 = 共 3 次呼吸
+        animator = ValueAnimator.ofFloat(0f, 1f, 0f).apply {
+            duration = 1100L
+            repeatCount = 2
+            repeatMode = ValueAnimator.RESTART
+            addUpdateListener { setAlpha(it.animatedValue as Float) }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: Animator) { alpha = 0f; v.invalidate() }
+            })
             start()
         }
     }
@@ -39,16 +46,15 @@ class GlowOverlay(private val v: View) {
         v.invalidate()
     }
 
-    @Suppress("unused") // 由 ObjectAnimator 反射调用
+    @Suppress("unused") // 由 ValueAnimator 反射调用
     fun setAlpha(a: Float) { alpha = a; v.invalidate() }
-    @Suppress("unused")
-    fun getAlpha() = alpha
 
     fun onDraw(c: Canvas) {
         if (alpha <= 0f) return
         val w = v.width.toFloat(); val h = v.height.toFloat()
-        val band = (w * 0.06f).coerceAtLeast(40f)
-        val color = 0x66FF3B30
+        val band = (w * 0.07f).coerceAtLeast(46f)   // 缺血带略加宽，更有「边缘渗血」感
+        // 边缘红（缺血红）透明渐隐；alpha 由呼吸动画整体控制强弱
+        val color = (0xCCFF2E26 and 0x00FFFFFF) or ((alpha * 0.8f * 255).toInt() shl 24)
         val transparent = 0x00000000
         paint.shader = LinearGradient(0f, 0f, band, 0f, color, transparent, Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, band, h, paint)

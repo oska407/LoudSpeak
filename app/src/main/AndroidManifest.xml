@@ -67,6 +67,12 @@
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
+        <!-- 历史「查看」（§R9：回看单条会话的音视频与标注文字） -->
+        <activity
+            android:name=".SessionViewActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
         <!-- 首次引导（§12.1） -->
         <activity
             android:name=".FirstRunActivity"

@@ -10,6 +10,9 @@ object RuleEngine {
     /** L1 默认词表（§8.1 / §14.2 D3）：不含 他/她/其 */
     val PRONOUNS = listOf("这个", "那个", "这些", "那些", "这样", "那样", "它")
 
+    /** 口头禅/填充词（§R9 标注体系）：纯语气词，与代词不重叠；弱化显示，提示「能省就省」 */
+    val FILLERS = listOf("嗯", "啊", "呃", "额", "哦", "唔", "哎", "呀", "诶")
+
     /** 单句数据（对应 §10.3 transcript 字段的内存形态） */
     class Sentence(
         val index: Int,
@@ -18,6 +21,7 @@ object RuleEngine {
         val text: String,            // ASR 原文（可能 null→显示?）
         val uncertain: Boolean,      // 识别不清（ASR 返回 null）
         val pronouns: MutableList<Pair<String, Int>> = mutableListOf(), // 词→句内位置
+        val fillers: MutableList<Pair<String, Int>> = mutableListOf(),  // 口头禅→句内位置（§R9）
         val flags: MutableList<String> = mutableListOf(),               // 缺主体/半截句/要素缺失
         var selfMarked: Boolean = false,
         val take: Int = 1,
@@ -49,6 +53,19 @@ object RuleEngine {
         return hits.sortedBy { it.second }
     }
 
+    /** 口头禅匹配（§R9 标注体系）。返回命中列表（词, 位置）。 */
+    fun matchFillers(text: String): List<Pair<String, Int>> {
+        val hits = mutableListOf<Pair<String, Int>>()
+        for (f in FILLERS) {
+            var i = text.indexOf(f)
+            while (i >= 0) {
+                hits.add(f to i)
+                i = text.indexOf(f, i + f.length)
+            }
+        }
+        return hits.sortedBy { it.second }
+    }
+
     /**
      * 整段判定（§12.3）：逐句 L1 + L4 高召回 → 跨句兜底撤销部分「缺主体」。
      * l4Enabled：按「第 N 次会话」节奏（§8.6），第 13 次会话起才开 L4-a。
@@ -57,8 +74,9 @@ object RuleEngine {
         // L1
         for (s in sentences) {
             if (!s.judgeable || s.selfMarked) continue
-            s.pronouns.clear(); s.flags.clear()
+            s.pronouns.clear(); s.flags.clear(); s.fillers.clear()
             s.pronouns.addAll(matchPronouns(s.text))
+            s.fillers.addAll(matchFillers(s.text))
         }
         if (!l4Enabled) return
 
