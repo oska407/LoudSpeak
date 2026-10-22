@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvPronCount: TextView
     private lateinit var lcd: LcdHost
     private lateinit var wave: WaveHost
-    private lateinit var tvText: TextView
+    private lateinit var textArea: WritingTextArea   // 第 3 行：书写式文字区（自动跟随/手拨/阻尼回收）
     private lateinit var glow: GlowHost
     private lateinit var diagnosisScroll: android.widget.ScrollView
     private lateinit var diagnosisList: LinearLayout
@@ -150,7 +150,7 @@ class MainActivity : AppCompatActivity() {
         tvPronCount = findViewById(R.id.tvPronCount)
         lcd = findViewById(R.id.lcdView)
         wave = findViewById(R.id.waveView)
-        tvText = findViewById(R.id.tvText)
+        textArea = findViewById(R.id.textArea)
         glow = findViewById(R.id.glowView)
         diagnosisScroll = findViewById(R.id.diagnosisPanel)
         diagnosisList = findViewById(R.id.diagnosisList)
@@ -243,12 +243,14 @@ class MainActivity : AppCompatActivity() {
     /** 空白文字区的提示：模型没就绪时直接说清缺什么，而不是一闪而过的 Toast */
     private fun idleHint() {
         if (sentences.isNotEmpty()) return
-        tvText.text = when {
-            asr.available -> "（点「录音」开始练习）"
-            asrLoading -> "正在加载语音模型…（首次约 15–30 秒，加载完这里会变）"
-            asr.status == "未加载" -> "还不能开始：还没找到模型文件\n（点底部「设置」→ 扫描并安装）"
-            else -> "还不能开始：${asr.status}\n（点底部「设置」→ 扫描并安装）"
-        }
+        textArea.setContent(
+            when {
+                asr.available -> "（点「录音」开始练习）"
+                asrLoading -> "正在加载语音模型…（首次约 15–30 秒，加载完这里会变）"
+                asr.status == "未加载" -> "还不能开始：还没找到模型文件\n（点底部「设置」→ 扫描并安装）"
+                else -> "还不能开始：${asr.status}\n（点底部「设置」→ 扫描并安装）"
+            }
+        )
     }
 
     /** 点击屏幕任意处立即消退红晕（§7.3）——只看不改事件流向，七键照常收得到点击 */
@@ -320,7 +322,7 @@ class MainActivity : AppCompatActivity() {
         take = 1
         prevTakePronouns = 0
         sentences.clear()
-        tvText.text = ""
+        textArea.reset()
         wave.wf.reset()
         glow.glow.clearNow()
 
@@ -534,7 +536,7 @@ class MainActivity : AppCompatActivity() {
             sb.append("\n")
         }
         if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
-        tvText.text = sb
+        textArea.setContent(sb)
     }
 
     private fun appendSep(sb: SpannableStringBuilder, chapter: Int) {
@@ -769,7 +771,7 @@ class MainActivity : AppCompatActivity() {
         diagnosisScroll.visibility = View.GONE
         prevTakePronouns = sentences.sumOf { it.pronouns.size }
         sentences.clear()
-        tvText.text = ""
+        textArea.reset()
         wave.wf.reset()
         videoSegIndex = 0
         sessionStartedAt = System.currentTimeMillis()

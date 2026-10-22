@@ -14,7 +14,7 @@
             android:id="@+id/leftPanel"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="34"
+            android:layout_weight="26"
             android:background="#000000">
 
             <androidx.camera.view.PreviewView
@@ -51,7 +51,7 @@
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="65"
+            android:layout_weight="73"
             android:orientation="vertical"
             android:padding="6dp">
 
@@ -63,16 +63,17 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
+                <!-- 卡片名一律两字（时长/整句/代词）——四字标签在 elevate 行高下会顶破卡片被裁掉 -->
                 <LinearLayout style="@style/DataCard" android:layout_weight="1">
                     <TextView style="@style/CardLabel" android:text="时长" />
                     <TextView style="@style/CardValue" android:id="@+id/tvDuration" android:text="00:00" />
                 </LinearLayout>
                 <LinearLayout style="@style/DataCard" android:layout_weight="1">
-                    <TextView style="@style/CardLabel" android:text="已说句数" />
+                    <TextView style="@style/CardLabel" android:text="整句" />
                     <TextView style="@style/CardValue" android:id="@+id/tvSentCount" android:text="0" />
                 </LinearLayout>
                 <LinearLayout style="@style/DataCard" android:layout_weight="1">
-                    <TextView style="@style/CardLabel" android:text="代词数" />
+                    <TextView style="@style/CardLabel" android:text="代词" />
                     <TextView style="@style/CardValue" android:id="@+id/tvPronCount" android:text="0" />
                 </LinearLayout>
 
@@ -103,19 +104,18 @@
                     android:layout_height="match_parent" />
             </FrameLayout>
 
-            <!-- 第 3 行 识别文字 -->
-            <TextView
-                android:id="@+id/tvText"
+            <!-- 第 3 行 识别文字（书写式：格线 + 自动跟随 / 手动拖动 / 阻尼回收焦点）
+                 字号 22sp → 18sp（小两号），由 WritingTextArea 内部设定 -->
+            <com.oska.loudspeak.WritingTextArea
+                android:id="@+id/textArea"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="316"
                 android:layout_marginTop="4dp"
                 android:background="@color/card_bg"
-                android:lineSpacingExtra="6dp"
-                android:padding="8dp"
-                android:text="（点「录音」开始练习）"
-                android:textColor="@color/label"
-                android:textSize="22sp" />
+                android:fillViewport="true"
+                android:overScrollMode="never"
+                android:scrollbarStyle="outsideOverlay" />
 
             <!-- 第 4 行 七键两组：停止/暂停/录音/播放 + 历史/设置/模式
                  七键等分（layout_weight=1，见 @style/Btn）：任何屏幕宽度都不会被挤出屏 -->

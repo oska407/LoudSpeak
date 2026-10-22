@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 第 1 行数据卡。⚠️ 行高只有约 78dp（132/720 × 424dp 可用高），
+         原先 10dp padding + 14sp 标签 + 34sp 数值 ≈ 78dp 刚好顶满甚至溢出，
+         实测「第一行卡片有字显示不出来」就是这个原因（真机 OPPO A3x，264ppi）。
+         现在：标签12sp / 数值30sp / 关字体内边距 / padding 收到 6dp ≈ 62dp，留出余量。
+         高度改 match_parent + 垂直居中，短内容也稳稳居中，不会被裁。 -->
     <style name="DataCard">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_height">match_parent</item>
         <item name="android:layout_margin">4dp</item>
-        <item name="android:padding">10dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">8dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@color/card_bg</item>
     </style>
@@ -12,14 +21,18 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/label</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
     </style>
     <style name="CardValue">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/white</item>
-        <item name="android:textSize">34sp</item>
+        <item name="android:textSize">30sp</item>
         <item name="android:textStyle">bold</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
     </style>
     <!-- 底部七键：等分占满一行（不设 minWidth，否则 7×92dp 会把「设置/模式」挤出屏幕）；
          颜色全部显式指定 —— 主题是 Material3 DayNight，本机浅色模式下 disabled 按钮
