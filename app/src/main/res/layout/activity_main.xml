@@ -6,6 +6,29 @@
     android:background="@color/bg"
     android:padding="12dp">
 
+    <!-- 验证期入口（B0/B1 真机验证用；产品版将移除，不占主界面四行） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="10dp">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/app_name"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+        <Button
+            android:id="@+id/btnSelfCheck"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_self_check"
+            android:textSize="16sp" />
+    </LinearLayout>
+
     <!-- 第 1 行：四卡数据区（时长 / 已说句数 / 代词数 / 音量 dB）。M0 为静态骨架，真实数据后续批次接入 -->
     <LinearLayout
         android:layout_width="match_parent"

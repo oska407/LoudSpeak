@@ -1,3 +1,25 @@
 <resources>
     <string name="app_name">大声说</string>
+
+    <!-- 验证期入口（B0/B1 真机验证用，产品版将移除） -->
+    <string name="btn_self_check">系统自检</string>
+
+    <!-- B0 内存自检页 -->
+    <string name="self_check_title">系统自检 · B0</string>
+    <string name="self_check_subtitle">对照设计规格，实测本机参数</string>
+    <string name="btn_refresh">重新检测</string>
+    <string name="btn_go_capture">进入采集验证 (B1)</string>
+    <string name="btn_back_main">返回主界面</string>
+
+    <!-- B1 采集验证页 -->
+    <string name="capture_title">采集验证 · B1</string>
+    <string name="capture_subtitle">预览与录制绑定同一 3:4 裁切区域</string>
+    <string name="btn_start_rec">开始录制</string>
+    <string name="btn_stop_rec">停止录制</string>
+    <string name="capture_hint">点击「开始录制」录 30 秒，停止后自动读出真实分辨率</string>
+    <string name="preview_label">预览：横屏 1280×720 → 取中间 3:4 竖条</string>
+    <string name="result_label">录制结果</string>
+    <string name="verdict_pass">✅ 通过：录制为 3:4 竖幅，与预览裁切一致</string>
+    <string name="verdict_fail_full">❌ 录制为全幅（非 544×720），需在 B2 做编码级裁切</string>
+    <string name="perm_hint">需要摄像头与麦克风权限才能采集</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.oska.loudspeak
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -30,6 +31,11 @@ class MainActivity : AppCompatActivity() {
             btn.setOnClickListener {
                 Toast.makeText(this, "$name（M0 占位）", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        // 验证期入口：进入 B0 内存自检页（产品版将移除）
+        binding.btnSelfCheck.setOnClickListener {
+            startActivity(Intent(this, SelfCheckActivity::class.java))
         }
     }
 }
