@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 允许创建 Release（APK 免登录下载）
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,3 +58,14 @@ jobs:
         with:
           name: loudspeak-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      # 同时发成 Release，附件免登录直链下载（沙箱/无需 token 的场景可拉）
+      - name: Publish APK to Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete debug-latest --yes --cleanup-tag || true
+          gh release create debug-latest app/build/outputs/apk/debug/*.apk \
+            --title "Debug APK (latest)" \
+            --notes "CI 自动编译的最新调试包，直接下载安装即可"
