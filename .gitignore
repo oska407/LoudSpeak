@@ -11,3 +11,8 @@
 
 __pycache__/
 *.pyc
+
+# 非安卓工程内容，只留在本地，不进仓库
+/docs/
+/pc/
+/prototype/
