@@ -33,8 +33,6 @@ import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import com.oska.loudspeak.core.AsrEngine
 import com.oska.loudspeak.core.AudioEngine
 import com.oska.loudspeak.core.CrashReporter
@@ -45,6 +43,7 @@ import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
 import com.oska.loudspeak.core.WaveformView
+import com.oska.loudspeak.core.Ui
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -94,6 +93,10 @@ class MainActivity : AppCompatActivity() {
 
     private val main = Handler(Looper.getMainLooper())
     private val asrExecutor = Executors.newSingleThreadExecutor()
+    private val ioExecutor = Executors.newSingleThreadExecutor()   // 停止/落盘等重 IO，绝不占主线程
+    private val longPressStop = Runnable {
+        if (state == "recording" || state == "paused") onStopBtn(emotional = true)
+    }
 
     private lateinit var store: SessionStore
     private lateinit var asr: AsrEngine
@@ -127,8 +130,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         // 设计约定「无顶部状态条」：藏掉系统状态栏，四行多出约 47dp（§6.1）
-        WindowCompat.getInsetsController(window, window.decorView)
-            .hide(WindowInsetsCompat.Type.statusBars())
+        Ui.hideStatusBar(this)
 
         // 首次引导（§12.1）：只出现一次
         if (!Prefs.firstRunDone(this)) {
@@ -160,7 +162,7 @@ class MainActivity : AppCompatActivity() {
 
         store = SessionStore(this)
         asr = AsrEngine(Prefs.modelsDir(this))
-        asrExecutor.execute { asr.load() }   // eMMC 15–30s，后台预热（§5.5）
+        // eMMC 15–30s 后台预热（§5.5）；加载结果在下方再刷新一次空闲提示
 
         btnRec.setOnClickListener { onRec() }
         btnPause.setOnClickListener { onPauseBtn() }
@@ -171,16 +173,17 @@ class MainActivity : AppCompatActivity() {
         btnMode.setOnClickListener { startActivity(Intent(this, ModeSelectActivity::class.java)) }
 
         // 长按停止 2 秒 = 情绪退出（§12.5）
+        // ⚠️ 必须用专用 Runnable 取消：早先用的 removeCallbacksAndMessages(null)
+        // 会连眼皮条形驱动 tickPlayhead、回放结束延时一并抹掉，导致回放卡住不再结束。
         btnStop.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    main.postDelayed({
-                        if (state == "recording" || state == "paused") onStopBtn(emotional = true)
-                    }, 2000)
+                    main.removeCallbacks(longPressStop)
+                    main.postDelayed(longPressStop, 2000)
                     false
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    main.removeCallbacksAndMessages(null); false
+                    main.removeCallbacks(longPressStop); false
                 }
                 else -> false
             }
@@ -193,11 +196,21 @@ class MainActivity : AppCompatActivity() {
         wave.wf.onSeek = { p -> seekPlayback(p) }
         btnSkipReplay.setOnClickListener { endReplay(showDiagnosis = true) }
         findViewById<Button>(R.id.btnRetake).setOnClickListener { onRetake() }
-        findViewById<Button>(R.id.btnCloseDiagnosis).setOnClickListener { diagnosisScroll.visibility = View.GONE }
+        // 关闭诊断必须回到 idle：否则 state 停在 diag，录音键会一直灰着没路出来
+        findViewById<Button>(R.id.btnCloseDiagnosis).setOnClickListener {
+            diagnosisScroll.visibility = View.GONE
+            if (state == "diag") { state = "idle"; updateButtons(); idleHint() }
+        }
 
-        store.cleanTrash()
+        ioExecutor.execute { store.cleanTrash() }   // 7 天过期回收目录清理：文件 IO，不占主线程
         updateModeBadge()
         updateButtons()
+        idleHint()
+        // 模型后台加载完（eMMC 15–30s）后刷新提示：原来只有 Toast/进设置才更新
+        asrExecutor.execute {
+            asr.load()
+            main.post { if (state == "idle" && sentences.isEmpty()) idleHint() }
+        }
     }
 
     override fun onResume() {
@@ -288,10 +301,15 @@ class MainActivity : AppCompatActivity() {
         wave.wf.reset()
         glow.glow.clearNow()
 
-        // 热降频缓解（§13.2 措施 1）：亮度锁 50%、刷新率 60Hz；停止时恢复
-        window.attributes = window.attributes.apply {
-            screenBrightness = 0.5f
-            preferredRefreshRate = 60f
+        // 热降频缓解（§13.2 措施 1）：亮度锁 50%、刷新率锁 60Hz；停止时恢复
+        // preferredRefreshRate 是 API 30 才有的字段，低版本设备访问会 NoSuchFieldError
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.attributes = window.attributes.apply {
+                screenBrightness = 0.5f
+                preferredRefreshRate = 60f
+            }
+        } else {
+            window.attributes = window.attributes.apply { screenBrightness = 0.5f }
         }
 
         // ①② 档建会话目录；③④ 档一个字节都不写（§10.1）
@@ -330,7 +348,9 @@ class MainActivity : AppCompatActivity() {
                     if (text == null) CrashReporter.report("error", "ASR 单句转写失败/为空 t0=$t0")
                     main.post { onAsrResult(text, t0, t1) }
                 }
-            }
+            },
+            // ③④ 档不落盘 → 不攒全程 PCM（10 分钟省 ~38MB，见 AudioEngine 注释）
+            keepPcm = (mode == Prefs.MODE_FULL || mode == Prefs.MODE_AUDIO)
         )
         audio?.start()
         state = "recording"
@@ -343,25 +363,56 @@ class MainActivity : AppCompatActivity() {
             try {
                 val provider = future.get()
                 cameraProvider = provider
-                val preview = Preview.Builder().setTargetResolution(Size(1280, 720)).build()
-                preview.setSurfaceProvider(previewView.surfaceProvider)
-                val groupBuilder = UseCaseGroup.Builder()
-                    .setViewPort(ViewPort.Builder(android.util.Rational(3, 4), Surface.ROTATION_0).setLayoutDirection(View.LAYOUT_DIRECTION_LTR).build())
-                    .addUseCase(preview)
-                if (record) {
-                    val recorder = Recorder.Builder().build()
-                    val vc = VideoCapture.Builder(recorder).setTargetResolution(Size(544, 720)).build()
-                    videoCapture = vc
-                    groupBuilder.addUseCase(vc)
-                }
                 provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, groupBuilder.build())
+
+                // 方案一：ViewPort + 显式分辨率（设计要的「预览与录制共用同一 3:4 中间竖条」）。
+                // 部分机型上 ViewPort 与 setTargetResolution 不能共存，会直接抛异常；
+                // 失败就退到方案二，保证「至少有画面」，不让整个 app 变砖。
+                var fisrtError: Throwable? = null
+                val ok = try {
+                    bindOnce(provider, record, withViewPort = true); true
+                } catch (e: Exception) {
+                    fisrtError = e
+                    try { provider.unbindAll() } catch (_: Exception) {}
+                    false
+                }
+                if (!ok) {
+                    try {
+                        bindOnce(provider, record, withViewPort = false)
+                        CrashReporter.report("warn",
+                            "相机已降级绑定（无 ViewPort，靠 PreviewView FILL_CENTER 裁中间）：${fisrtError?.message?.take(120)}")
+                    } catch (e2: Exception) {
+                        CrashReporter.report("error", "相机绑定失败 mode=$mode（两种方案都失败）", e2)
+                        Toast.makeText(this, "相机启动失败：${e2.message}", Toast.LENGTH_SHORT).show()
+                        return@addListener
+                    }
+                }
                 if (record) startVideoSegment()
             } catch (e: Exception) {
                 CrashReporter.report("error", "相机绑定失败 mode=$mode", e)
                 Toast.makeText(this, "相机启动失败：${e.message}", Toast.LENGTH_SHORT).show()
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /** 绑定一次相机。withViewPort=true 走设计的主方案；false 为降级方案（由 PreviewView 自己裁中间）。 */
+    private fun bindOnce(provider: ProcessCameraProvider, record: Boolean, withViewPort: Boolean) {
+        val preview = Preview.Builder().setTargetResolution(Size(1280, 720)).build()
+        preview.setSurfaceProvider(previewView.surfaceProvider)
+        var groupBuilder = UseCaseGroup.Builder().addUseCase(preview)
+        if (withViewPort) {
+            groupBuilder = groupBuilder.setViewPort(
+                ViewPort.Builder(android.util.Rational(3, 4), Surface.ROTATION_0)
+                    .setLayoutDirection(View.LAYOUT_DIRECTION_LTR).build()
+            )
+        }
+        if (record) {
+            val recorder = Recorder.Builder().build()
+            val vc = VideoCapture.Builder(recorder).setTargetResolution(Size(544, 720)).build()
+            videoCapture = vc
+            groupBuilder = groupBuilder.addUseCase(vc)
+        }
+        provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, groupBuilder.build())
     }
 
     private fun unbindCamera() {
@@ -460,9 +511,16 @@ class MainActivity : AppCompatActivity() {
         when (state) {
             "recording" -> { audio?.pause(); videoRecording?.pause(); state = "paused" }
             "paused" -> {
-                audio?.resume(); videoRecording?.resume()
+                audio?.resume()
+                videoRecording?.resume()
                 state = "recording"
-                if (mode == Prefs.MODE_FULL) startVideoSegment()   // 暂停产生新分段
+                if (mode == Prefs.MODE_FULL) {
+                    // 暂停→继续要起新分段；旧录制还处于 pause 状态，必须先收尾再 start，
+                    // 否则 prepareRecording 会抛 IllegalStateException。
+                    try { videoRecording?.stop() } catch (_: Exception) {}
+                    videoRecording = null
+                    startVideoSegment()
+                }
             }
         }
         updateButtons()
@@ -472,36 +530,46 @@ class MainActivity : AppCompatActivity() {
         if (state != "recording" && state != "paused") return
         val wasMode = mode
         val dir = sessionDir
-        val elapsed = audio?.elapsedMs() ?: 0
+        val engine = audio
+        val elapsed = engine?.elapsedMs() ?: 0
         try { videoRecording?.stop() } catch (_: Exception) {}
         videoRecording = null
-        val pcm = audio?.stop()
         audio = null
         state = "idle"
         glow.glow.clearNow()
         // 恢复屏幕亮度与刷新率（§13.2）
         window.attributes = window.attributes.apply {
             screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-            preferredRefreshRate = 0f
+            if (android.os.Build.VERSION.SDK_INT >= 30) preferredRefreshRate = 0f
         }
+
         updateButtons()
 
-        // ①② 档落盘 audio.wav；③④ 档一个字节都不写（§10.1）
-        if (dir != null && pcm != null && (wasMode == Prefs.MODE_FULL || wasMode == Prefs.MODE_AUDIO)) {
-            val wav = AudioEngine(vadSilenceMs = 800, onFrame = { _, _ -> }, onSentence = { _, _, _ -> }).toWav(pcm)
-            asrExecutor.execute {
-                try { File(dir, "audio.wav").writeBytes(wav) } catch (_: Exception) {}
+        // 停止采集（join 最长 800ms）+ 转成 WAV（10 分钟 ≈ 19MB 字节）都是重活，
+        // 全部放后台：原来在主线程做，长会话按「停止」会明显卡顿甚至 ANR。
+        ioExecutor.execute {
+            val pcm = engine?.stop()
+            // ①② 档落盘 audio.wav；③④ 档一个字节都不写（§10.1）
+            if (dir != null && pcm != null && (wasMode == Prefs.MODE_FULL || wasMode == Prefs.MODE_AUDIO)) {
+                try {
+                    val wav = AudioEngine(vadSilenceMs = 800, onFrame = { _, _ -> }, onSentence = { _, _, _ -> })
+                        .toWav(pcm)
+                    File(dir, "audio.wav").writeBytes(wav)
+                } catch (e: Exception) {
+                    CrashReporter.report("error", "audio.wav 写入失败 dir=$dir", e)
+                }
+            }
+            main.post {
+                if (emotional) {
+                    // 情绪退出：跳过回放与判定，不产任何评价（§12.5）
+                    if (dir != null) saveSession(elapsed, exitKind = "emotional")
+                    AlertDialog.Builder(this).setMessage("没事，我们下次再来。")
+                        .setPositiveButton("好", null).show()
+                } else {
+                    runJudgmentAndDiagnosis(elapsed)
+                }
             }
         }
-
-        if (emotional) {
-            // 情绪退出：跳过回放与判定，不产任何评价（§12.5）
-            if (dir != null) saveSession(elapsed, exitKind = "emotional")
-            AlertDialog.Builder(this).setMessage("没事，我们下次再来。")
-                .setPositiveButton("好", null).show()
-            return
-        }
-        runJudgmentAndDiagnosis(elapsed)
     }
 
     private fun saveSession(elapsedMs: Long, exitKind: String) {
@@ -686,7 +754,8 @@ class MainActivity : AppCompatActivity() {
                     val text = asr.transcribe(pcm)
                     main.post { onAsrResult(text, t0, t1) }
                 }
-            }
+            },
+            keepPcm = (mode == Prefs.MODE_FULL || mode == Prefs.MODE_AUDIO)
         )
         audio?.start()
         state = "recording"
@@ -722,8 +791,9 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         try { videoRecording?.stop() } catch (_: Exception) {}
         try { audioPlayer?.release() } catch (_: Exception) {}
-        audio?.stop()
+        try { audio?.stop() } catch (_: Exception) {}
         asr.release()
         asrExecutor.shutdown()
+        ioExecutor.shutdown()
     }
 }

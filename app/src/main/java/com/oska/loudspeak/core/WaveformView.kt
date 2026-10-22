@@ -32,7 +32,8 @@ class WaveformView(v: View) {
     private var dragging = false
 
     init {
-        v.isClickable = true
+        // ⚠️ 不要设 isClickable=true：那样非回放状态下 View.onTouchEvent 也会吞掉
+        // ACTION_DOWN（clickable 的默认行为），整行事件都白瞎。OnTouchListener 本身不依赖它。
         v.setOnTouchListener { _, e ->
             if (playhead >= 0 && overview.isNotEmpty()) {
                 when (e.action) {

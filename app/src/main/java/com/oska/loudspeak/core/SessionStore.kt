@@ -145,9 +145,15 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             ?.sortedByDescending { it.deletedAt } ?: emptyList()
 
     fun restoreFromTrash(item: TrashItem): String? {
-        val target = File(root(), item.dir.name.substringBeforeLast('-') + "-" +
-            java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-                .format(java.util.Date(System.currentTimeMillis())))
+        // 目录名必须原样还原成 sessionId：回收站里是 "<sessionId>-<删除时间戳>"，
+        // 若再拼一次时间戳，还原出来的目录名就不是 sessionId 了，下次删除会卡在路径校验。
+        val metaNow = File(item.dir, "meta.json")
+        val sessionId = try {
+            if (metaNow.isFile) JSONObject(metaNow.readText()).optString("sessionId")
+                .takeIf { it.isNotBlank() } else null
+        } catch (_: Exception) { null } ?: item.dir.name.substringBeforeLast('-')
+        val target = File(root(), sessionId)
+        if (target.exists()) return "恢复失败（历史里已有同名会话：$sessionId）"
         return try {
             if (!item.dir.renameTo(target)) "恢复失败（目录被占用？）"
             else {

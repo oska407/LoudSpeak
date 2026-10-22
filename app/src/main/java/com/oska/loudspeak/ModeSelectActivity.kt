@@ -6,6 +6,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.oska.loudspeak.core.Prefs
+import com.oska.loudspeak.core.Ui
 
 /** 四档选择（§6.4 模式键）：每档一句人话说明；开始前选定，会中不可切 */
 class ModeSelectActivity : AppCompatActivity() {
@@ -42,6 +43,7 @@ class ModeSelectActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, pad / 2, 0, 0) })
         }
+        Ui.hideStatusBar(this)
         setContentView(root)
     }
 }

@@ -24,7 +24,7 @@
     <!-- 底部七键：等分占满一行（不设 minWidth，否则 7×92dp 会把「设置/模式」挤出屏幕）；
          颜色全部显式指定 —— 主题是 Material3 DayNight，本机浅色模式下 disabled 按钮
          用的是近黑 onSurface，画在深色背景上等于隐形（真机实测看不到「停止/暂停/播放」）。 -->
-    <style name="Btn">
+    <style name="Btn" parent="Widget.Material3.Button">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
@@ -37,6 +37,7 @@
         <item name="android:textSize">17sp</item>
         <item name="android:textColor">@color/btn_text</item>
         <item name="android:backgroundTint">@color/btn_bg</item>
+        <item name="backgroundTint">@color/btn_bg</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
 

@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.oska.loudspeak.core.SessionStore
+import com.oska.loudspeak.core.Ui
 import java.io.File
 
 /** 回收站（§11.4）：软删除的会话在这里，保留 7 天；可逐条恢复，清空需确认 */
@@ -54,7 +55,10 @@ class TrashActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(btns, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        setContentView(ScrollView(this).apply { addView(root) })
+        // ⚠️ 不能再包一层 ScrollView：外层给 root 的是 UNSPECIFIED 高度，
+        // 里面 ScrollView 的 layout_weight=1 会失效 → 底部按钮被列表顶出屏幕。
+        Ui.hideStatusBar(this)
+        setContentView(root)
         rebuild()
     }
 

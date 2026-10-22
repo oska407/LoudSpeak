@@ -11,11 +11,15 @@ import android.media.MediaRecorder
  * - 每帧：算 RMS → 分贝器 → VAD；句末回调整句 PCM（送 ASR）
  * - 全程 PCM 累积（①② 档停止后写 audio.wav；③④ 档停止即丢弃）
  * - pause/resume：暂停时停采集，继续时新起分段
+ *
+ * keepPcm=false 用于 ③④ 档：一个字节都不落盘，就不必攒全程 PCM
+ * （10 分钟 ≈ 9.6M float ≈ 38MB，P0 验证项「③④ 档内存稳定性」要求这部分省掉）。
  */
 class AudioEngine(
     private val vadSilenceMs: Int = 800,
     private val onFrame: (rawL: Float, amplitude: Float) -> Unit,
-    private val onSentence: (pcm: FloatArray, tStartMs: Long, tEndMs: Long) -> Unit
+    private val onSentence: (pcm: FloatArray, tStartMs: Long, tEndMs: Long) -> Unit,
+    private val keepPcm: Boolean = true
 ) {
     companion object { const val SR = 16000 }
 
@@ -60,7 +64,7 @@ class AudioEngine(
                 val rms = Math.sqrt(sumSq / n).toFloat()
                 val rawL = meter.raw(rms)
                 val elapsed = elapsedMs()
-                synchronized(allPcm) { allPcm.add(f) }
+                if (keepPcm) synchronized(allPcm) { allPcm.add(f) }
                 meter.frame(rawL, elapsed)
                 onFrame(rawL, (rms * amplitudeScale).coerceIn(0f, 1f))
                 val sent = vad.feed(f, rawL, elapsed)
@@ -84,6 +88,8 @@ class AudioEngine(
         record?.run { try { stop(); release() } catch (_: Exception) {} }
         record = null
         val tail = vad.flush()
+        // ③④ 档（keepPcm=false）不返回任何 PCM：内容本来也不允许落盘
+        if (!keepPcm) { allPcm.clear(); return FloatArray(0) }
         val out = ArrayList<FloatArray>(allPcm)
         if (tail != null) out.add(tail.frames.toList().flatMap { it.asSequence() }.toFloatArray())
         synchronized(allPcm) { allPcm.clear() }

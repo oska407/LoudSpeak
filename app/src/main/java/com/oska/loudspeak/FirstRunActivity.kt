@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.oska.loudspeak.core.AsrEngine
 import com.oska.loudspeak.core.Prefs
+import com.oska.loudspeak.core.Ui
 
 /**
  * 首次引导（§12.1，单页三段式）：
@@ -67,6 +68,7 @@ class FirstRunActivity : AppCompatActivity() {
         root.addView(btnDone, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
+        Ui.hideStatusBar(this)
         setContentView(ScrollView(this).apply { addView(root) })
         refreshModel()
     }

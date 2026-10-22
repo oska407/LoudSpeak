@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.oska.loudspeak.core.CrashReporter
+import com.oska.loudspeak.core.Ui
 import java.io.File
 
 /** 错误报告页（调试用）：列出 crash/error 报告，点开看详情，可清空。完全离线，只在本机。 */
@@ -47,7 +48,9 @@ class ErrorsActivity : AppCompatActivity() {
         btns.addView(back, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(btns)
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        // 同上：root 内部自带 ScrollView（weight=1），外层再包会让权重失效
+        Ui.hideStatusBar(this)
+        setContentView(root)
         rebuild(listHost, pad)
     }
 

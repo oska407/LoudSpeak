@@ -3,5 +3,15 @@
         <item name="android:colorBackground">@color/bg</item>
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/black</item>
+        <!-- 全局按钮样式（含代码里 new Button() 出来的）：
+             本机是浅色模式，M3 默认的禁用态画的是近黑 onSurface，
+             压在深色背景上等于隐形（首导页授权后按钮「消失」就是这个原因）。 -->
+        <item name="materialButtonStyle">@style/LSButton</item>
+    </style>
+
+    <!-- 只改颜色，不改尺寸，避免影响各处按文字长短排版的按钮 -->
+    <style name="LSButton" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/btn_bg</item>
+        <item name="android:textColor">@color/btn_text</item>
     </style>
 </resources>

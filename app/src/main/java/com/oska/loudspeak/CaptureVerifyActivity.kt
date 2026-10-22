@@ -24,6 +24,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import com.oska.loudspeak.core.Ui
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -61,6 +62,7 @@ class CaptureVerifyActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_capture_verify)
+        Ui.hideStatusBar(this)
 
         previewView = findViewById(R.id.previewView)
         tvResult = findViewById(R.id.tvResult)

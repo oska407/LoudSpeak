@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.oska.loudspeak.core.AsrEngine
 import com.oska.loudspeak.core.Prefs
+import com.oska.loudspeak.core.Ui
 import java.io.File
 
 /**
@@ -146,6 +147,7 @@ class SettingsActivity : AppCompatActivity() {
         btnBack.setOnClickListener { finish() }
         root.addView(btnBack)
 
+        Ui.hideStatusBar(this)
         setContentView(android.widget.ScrollView(this).apply { addView(root) })
         refreshModelStatus()
     }

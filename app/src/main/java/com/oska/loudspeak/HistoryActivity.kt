@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.SessionStore
+import com.oska.loudspeak.core.Ui
 
 /** 历史列表（§11.2）：时间倒序；单条删除走软删除+白名单校验（§11.4） */
 class HistoryActivity : AppCompatActivity() {
@@ -36,7 +37,12 @@ class HistoryActivity : AppCompatActivity() {
         }
         root.addView(title)
 
+        val tvEmpty = TextView(this).apply {
+            text = "还没有记录。①② 档练习结束后会出现在这里；③④ 档按设计什么都不保存。"
+            textSize = 16f; setTextColor(0xFF9AA7B0.toInt()); visibility = View.GONE
+        }
         val list = ListView(this)
+        list.emptyView = tvEmpty
         adapter = object : BaseAdapter() {
             override fun getCount() = records.size
             override fun getItem(p: Int) = records[p]
@@ -70,6 +76,8 @@ class HistoryActivity : AppCompatActivity() {
         list.adapter = adapter
         root.addView(list, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(tvEmpty, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         val back = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         back.addView(Button(this).apply {
@@ -80,6 +88,7 @@ class HistoryActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(back, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        Ui.hideStatusBar(this)
         setContentView(root)
         load()
     }

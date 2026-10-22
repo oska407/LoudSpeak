@@ -64,16 +64,19 @@ class AsrEngine(private val modelsDir: String) {
     /** 单句转写。输入 16kHz 单声道 float PCM。出错返回 null（UI 显示 ?） */
     fun transcribe(pcm: FloatArray): String? {
         val r = recognizer ?: return null
+        var stream: com.k2fsa.sherpa.onnx.OfflineStream? = null
         return try {
-            val stream = r.createStream()
+            stream = r.createStream()
             stream.acceptWaveform(pcm, 16000)
             r.decode(stream)
             val text = r.getResult(stream).text.trim()
-            stream.release()
             text.ifEmpty { null }
         } catch (e: Exception) {
             Log.e("AsrEngine", "transcribe failed", e)
             null
+        } finally {
+            // 必须释放：每句一个 stream，不释放会持续吃 native 内存（长时间会话会 OOM）
+            try { stream?.release() } catch (_: Exception) {}
         }
     }
 

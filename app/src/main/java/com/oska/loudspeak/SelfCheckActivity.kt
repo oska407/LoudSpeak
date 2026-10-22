@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.oska.loudspeak.core.Ui
 import java.io.BufferedReader
 import java.io.FileReader
 
@@ -25,6 +26,7 @@ class SelfCheckActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_self_check)
+        Ui.hideStatusBar(this)
         reportContainer = findViewById(R.id.reportContainer)
 
         findViewById<View>(R.id.btnRefresh).setOnClickListener { runReport() }
