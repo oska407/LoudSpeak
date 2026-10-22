@@ -8,3 +8,6 @@
 .externalNativeBuild
 .cxx
 /app/build
+
+__pycache__/
+*.pyc
