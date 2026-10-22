@@ -35,6 +35,24 @@
             android:name=".CaptureVerifyActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
+
+        <!-- 模式选择（§6.4 模式键） -->
+        <activity
+            android:name=".ModeSelectActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <!-- 设置页（分贝阈值 / 断句 / 红晕 / 模型） -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <!-- 历史列表（§11） -->
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
     </application>
 
 </manifest>

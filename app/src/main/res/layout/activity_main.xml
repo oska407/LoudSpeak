@@ -1,106 +1,220 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/bg"
-    android:padding="12dp">
+    android:background="@color/bg">
 
-    <!-- 验证期入口（B0/B1 真机验证用；产品版将移除，不占主界面四行） -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="10dp">
-        <TextView
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <!-- 左栏：摄像头预览 / 回放视频（①③ 档；②④ 档隐藏，右栏占满） -->
+        <FrameLayout
+            android:id="@+id/leftPanel"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/app_name"
-            android:textColor="@color/white"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-        <Button
-            android:id="@+id/btnSelfCheck"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/btn_self_check"
-            android:textSize="16sp" />
-    </LinearLayout>
+            android:layout_height="match_parent"
+            android:layout_weight="34"
+            android:background="#000000">
 
-    <!-- 第 1 行：四卡数据区（时长 / 已说句数 / 代词数 / 音量 dB）。M0 为静态骨架，真实数据后续批次接入 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:baselineAligned="false">
+            <androidx.camera.view.PreviewView
+                android:id="@+id/previewView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
 
-        <LinearLayout style="@style/DataCard" android:layout_weight="1">
-            <TextView style="@style/CardLabel" android:text="时长" />
-            <TextView style="@style/CardValue" android:text="00:00" />
-        </LinearLayout>
+            <VideoView
+                android:id="@+id/videoView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
 
-        <LinearLayout style="@style/DataCard" android:layout_weight="1">
-            <TextView style="@style/CardLabel" android:text="已说句数" />
-            <TextView style="@style/CardValue" android:text="0" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/DataCard" android:layout_weight="1">
-            <TextView style="@style/CardLabel" android:text="代词数" />
-            <TextView style="@style/CardValue" android:text="0" />
-        </LinearLayout>
-
-        <!-- 分贝卡：深色 LCD 风格，绿字（M0 占位，阈值变色逻辑后续接入） -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1.9"
-            android:layout_margin="4dp"
-            android:padding="10dp"
-            android:orientation="vertical"
-            android:background="@color/lcd_bg">
-            <TextView style="@style/CardLabel" android:text="音量 dB" />
             <TextView
+                android:id="@+id/tvModeBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="--"
-                android:textColor="@color/accent"
-                android:textSize="44sp"
-                android:textStyle="bold" />
+                android:layout_gravity="top|end"
+                android:layout_margin="6dp"
+                android:background="#99000000"
+                android:padding="4dp"
+                android:text="③ 纯显示·带画面"
+                android:textColor="#FF4ADE80"
+                android:textSize="13sp" />
+        </FrameLayout>
+
+        <!-- 分隔线 -->
+        <View
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:background="#FF22303A" />
+
+        <!-- 右栏：四行 132/128/316/144 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="65"
+            android:orientation="vertical"
+            android:padding="6dp">
+
+            <!-- 第 1 行 数据区 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="132"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <LinearLayout style="@style/DataCard" android:layout_weight="1">
+                    <TextView style="@style/CardLabel" android:text="时长" />
+                    <TextView style="@style/CardValue" android:id="@+id/tvDuration" android:text="00:00" />
+                </LinearLayout>
+                <LinearLayout style="@style/DataCard" android:layout_weight="1">
+                    <TextView style="@style/CardLabel" android:text="已说句数" />
+                    <TextView style="@style/CardValue" android:id="@+id/tvSentCount" android:text="0" />
+                </LinearLayout>
+                <LinearLayout style="@style/DataCard" android:layout_weight="1">
+                    <TextView style="@style/CardLabel" android:text="代词数" />
+                    <TextView style="@style/CardValue" android:id="@+id/tvPronCount" android:text="0" />
+                </LinearLayout>
+
+                <!-- 分贝卡：主视觉（约 1.9 倍宽），自绘 LCD -->
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1.9"
+                    android:layout_margin="4dp">
+                    <view
+                        class="com.oska.loudspeak.MainActivity$LcdHost"
+                        android:id="@+id/lcdView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+                </FrameLayout>
+            </LinearLayout>
+
+            <!-- 第 2 行 波形 -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="128"
+                android:layout_marginTop="4dp">
+                <view
+                    class="com.oska.loudspeak.MainActivity$WaveHost"
+                    android:id="@+id/waveView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+            </FrameLayout>
+
+            <!-- 第 3 行 识别文字 -->
+            <TextView
+                android:id="@+id/tvText"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="316"
+                android:layout_marginTop="4dp"
+                android:background="@color/card_bg"
+                android:lineSpacingExtra="6dp"
+                android:padding="8dp"
+                android:text="（点「录音」开始练习）"
+                android:textColor="@color/label"
+                android:textSize="22sp" />
+
+            <!-- 第 4 行 七键两组：停止/暂停/录音/播放 + 历史/设置/模式 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="144"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/btnStop" style="@style/Btn" android:enabled="false" android:text="停止" />
+                <Button android:id="@+id/btnPause" style="@style/Btn" android:enabled="false" android:text="暂停" />
+                <Button android:id="@+id/btnRec" style="@style/Btn" android:text="录音" />
+                <Button android:id="@+id/btnPlay" style="@style/Btn" android:enabled="false" android:text="播放" />
+
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+                <Button android:id="@+id/btnHistory" style="@style/Btn" android:text="历史" />
+                <Button android:id="@+id/btnSettings" style="@style/Btn" android:text="设置" />
+                <Button android:id="@+id/btnMode" style="@style/Btn" android:text="模式" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 文字区（M0 占位）。后续批次接入 ASR 文字 + 代词标红 + 波形 seek -->
-    <TextView
-        android:id="@+id/tvText"
+    <!-- 红晕：全屏边缘泛红，不拦截触控 -->
+    <view
+        class="com.oska.loudspeak.MainActivity$GlowHost"
+        android:id="@+id/glowView"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:text="大声说 · M0 空壳\n（四档 / 分贝 / 波形 / 判定 将在后续批次接入）"
-        android:textColor="@color/white"
-        android:textSize="22sp" />
+        android:layout_height="match_parent" />
 
-    <!-- 第 4 行：七键两组（操作组 停止/录音/播放 ＋ 入口组 历史/设置/模式） -->
-    <LinearLayout
+    <!-- 回放跳过（右下角，醒目） -->
+    <Button
+        android:id="@+id/btnSkipReplay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:backgroundTint="#FFFFD54F"
+        android:text="跳过 ▶▶"
+        android:textColor="#FF000000"
+        android:visibility="gone" />
+
+    <!-- 追问卡（录后诊断，底部浮层） -->
+    <ScrollView
+        android:id="@+id/diagnosisPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_gravity="bottom"
+        android:layout_margin="8dp"
+        android:background="#EE1C242B"
+        android:elevation="8dp"
+        android:visibility="gone">
 
-        <Button android:id="@+id/btnStop" style="@style/Btn" android:text="停止" />
-        <Button android:id="@+id/btnRec" style="@style/Btn" android:text="录音" />
-        <Button android:id="@+id/btnPlay" style="@style/Btn" android:text="播放" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
 
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+            <TextView
+                android:id="@+id/tvDiagnosisTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="诊断"
+                android:textColor="@color/white"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
-        <Button android:id="@+id/btnHistory" style="@style/Btn" android:text="历史" />
-        <Button android:id="@+id/btnSettings" style="@style/Btn" android:text="设置" />
-        <Button android:id="@+id/btnMode" style="@style/Btn" android:text="模式" />
-    </LinearLayout>
+            <LinearLayout
+                android:id="@+id/diagnosisList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="8dp" />
 
-</LinearLayout>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnRetake"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="2"
+                    android:text="再讲一次这道题"
+                    android:textSize="18sp" />
+
+                <Button
+                    android:id="@+id/btnCloseDiagnosis"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="关闭"
+                    android:textSize="18sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</FrameLayout>
