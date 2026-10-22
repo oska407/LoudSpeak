@@ -131,6 +131,18 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         return null
     }
 
+    /** 目录占用（字节）。§11.5：占用是「会话 + 回收站」一起算 */
+    fun dirSizeBytes(f: File): Long = try {
+        f.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    } catch (_: Exception) { 0L }
+
+    fun trashSizeBytes(): Long = dirSizeBytes(File(root(), ".trash"))
+
+    fun sessionsSizeBytes(): Long = dirSizeBytes(File(root()))
+
+    /** 最旧的 N 条（§11.5 清理建议：列出供勾选，不替用户决定删哪些） */
+    fun oldestSessions(n: Int): List<Record> = listSessions().sortedBy { it.startedAt }.take(n)
+
     /** 清理回收站中 7 天前的目录（§11.4，每日首次启动时调用） */
     fun cleanTrash() {
         val trash = File(root(), ".trash")

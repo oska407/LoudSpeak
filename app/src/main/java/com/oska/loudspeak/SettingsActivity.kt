@@ -24,6 +24,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var tvModelStatus: TextView
     private lateinit var tvPerm: TextView
+    private lateinit var tvStorage: TextView
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private fun hasAllFiles(): Boolean =
@@ -41,6 +42,76 @@ class SettingsActivity : AppCompatActivity() {
         super.onResume()
         refreshPerm()
         if (::tvModelStatus.isInitialized) refreshModelStatus()
+        refreshStorage()
+    }
+
+    // ================= 存储与清理（§11.5） =================
+
+    /** 扫整个会话目录是文件 IO，放后台线程：设置页每次回来刷一次，卡主线程会让界面顿一下 */
+    private fun refreshStorage() {
+        if (!::tvStorage.isInitialized) return
+        tvStorage.text = "统计中…"
+        asrExecutor.execute {
+            val st = com.oska.loudspeak.core.SessionStore(this@SettingsActivity)
+            val trash = st.trashSizeBytes()
+            val sessions = (st.sessionsSizeBytes() - trash).coerceAtLeast(0)
+            val free = (File(Prefs.modelsDir(this@SettingsActivity)).parentFile ?: filesDir).usableSpace
+            val oldest = st.oldestSessions(1).firstOrNull()
+            val ageDays = oldest?.let { (System.currentTimeMillis() - it.startedAt) / 86_400_000 } ?: 0
+            val warn = StringBuilder()
+            // §11.5：超过 10GB 或保留超过 30 天时**只提示，不自动删**
+            if (sessions > 10L * 1_000_000_000) warn.append("⚠ 会话已超过 10GB，建议回头看看最旧的几条\n")
+            if (ageDays > 30) warn.append("⚠ 最旧的一条已经 ${ageDays} 天（默认保留 30 天，只提示不自动删）\n")
+            val txt = "${warn}会话：%.2fGB · 回收站：%.2fGB · 可用：%.2fGB".format(
+                sessions / 1e9, trash / 1e9, free / 1e9)
+            runOnUiThread { tvStorage.text = txt }
+        }
+    }
+
+    /**
+     * 清理建议：列出最旧的 10 条让用户自己勾（§11.5「而不是替用户决定删哪些」）。
+     * 勾选后只做软删除（进回收站），回收站里还能逐条恢复。
+     */
+    private fun showCleanup() {
+        val st = com.oska.loudspeak.core.SessionStore(this)
+        val olds = st.oldestSessions(10)
+        if (olds.isEmpty()) {
+            Toast.makeText(this, "还没有会话记录", Toast.LENGTH_SHORT).show(); return
+        }
+        val labels = olds.map { r ->
+            val d = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(r.startedAt))
+            "   %s · %d分钟 · %.0fMB".format(d, r.durationMs / 60000, st.dirSizeBytes(File(r.dirPath)) / 1e6)
+        }.toTypedArray()
+        val checked = BooleanArray(olds.size)
+        AlertDialog.Builder(this)
+            .setTitle("清理建议：最旧的 ${olds.size} 条（勾选后移入回收站，还能恢复）")
+            .setMultiChoiceItems(labels, checked) { _, w, v -> checked[w] = v }
+            .setNegativeButton("先不删", null)
+            .setPositiveButton("移入回收站") { _, _ ->
+                var n = 0
+                olds.forEachIndexed { i, r -> if (checked[i] && st.softDelete(r.sessionId) == null) n++ }
+                Toast.makeText(this, "已移入回收站 $n 条", Toast.LENGTH_SHORT).show()
+                refreshStorage()
+            }
+            .show()
+    }
+
+    /** 清空回收站：永久删除，所以必须先确认（§11.5 绝不静默删除） */
+    private fun confirmEmptyTrash() {
+        val st = com.oska.loudspeak.core.SessionStore(this)
+        if (st.listTrash().isEmpty()) {
+            Toast.makeText(this, "回收站是空的", Toast.LENGTH_SHORT).show(); return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("清空回收站")
+            .setMessage("回收站里的会话会被永久删除，不可恢复。要继续吗？")
+            .setPositiveButton("永久删除") { _, _ ->
+                val n = st.emptyTrash()
+                Toast.makeText(this, "已永久删除 $n 条", Toast.LENGTH_SHORT).show()
+                refreshStorage()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -193,6 +264,25 @@ class SettingsActivity : AppCompatActivity() {
                 Prefs.setLlmEnabled(this@SettingsActivity, v)
                 refreshModelStatus()
             }
+        })
+
+        // ---- 存储与空间清理（§11.5：只提示不自动删；删除只进回收站）----
+        root.addView(label("存储与空间（删除只会进回收站，绝不静默删）"))
+        tvStorage = TextView(this).apply {
+            textSize = 15f; setTextColor(0xFFFFFFFF.toInt()); setLineSpacing(0f, 1.25f)
+        }
+        root.addView(tvStorage)
+        root.addView(Button(this).apply {
+            text = "清理建议（列出最旧的 10 条，自己勾）"
+            setOnClickListener { showCleanup() }
+        })
+        root.addView(Button(this).apply {
+            text = "回收站（逐条恢复 / 永久删除）"
+            setOnClickListener { startActivity(Intent(this@SettingsActivity, TrashActivity::class.java)) }
+        })
+        root.addView(Button(this).apply {
+            text = "清空回收站（会永久删除，不可恢复）"
+            setOnClickListener { confirmEmptyTrash() }
         })
 
         // 其它入口

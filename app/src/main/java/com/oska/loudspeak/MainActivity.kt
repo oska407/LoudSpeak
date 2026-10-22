@@ -2,6 +2,7 @@ package com.oska.loudspeak
 
 import android.Manifest
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.MediaPlayer
@@ -129,6 +130,8 @@ class MainActivity : AppCompatActivity() {
     private var asrLoading = false
     private var lastGlowAt = 0L
     private var prompted10Min = false
+    /** 过热提示（每会话一次，非阻断） */
+    private var promptedHot = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -328,6 +331,7 @@ class MainActivity : AppCompatActivity() {
         sessionStartedAt = System.currentTimeMillis()
         chaptersDrawn = 0
         prompted10Min = false
+        promptedHot = false
         take = 1
         prevTakePronouns = 0
         sentences.clear()
@@ -368,11 +372,28 @@ class MainActivity : AppCompatActivity() {
                     // 连续录满 10 分钟：非阻断提示，不自动停（§13.2 措施 4）
                     if (!prompted10Min && (audio?.elapsedMs() ?: 0) >= 10 * 60_000L) {
                         prompted10Min = true
+                        // §13.2 措施 5（前 4 条见 startRecording 的亮度/刷新率锁与 ASR 线程数 2）：
+                        // 温度角标已经取消，温度就随这次提示带出来。
+                        val t = batteryTempC()
+                        val tail = if (t != null) " · 现在 $t℃" else ""
                         AlertDialog.Builder(this)
-                            .setMessage("已录 10 分钟，要不要先停一下？")
+                            .setMessage("已录 10 分钟$tail，要不要先停一下？")
                             .setPositiveButton("继续录", null)
                             .setNeutralButton("先停下") { _, _ -> onStopBtn(emotional = false) }
                             .show()
+                    }
+                    // 太热了单独弹一次（非阻断，每会话一次）：热降频会把出字从 1–2s 拉长到 3–5s，
+                    // 那时候「文字跟不上说话」，练的体验就崩了（§16 R10）。
+                    if (!promptedHot && (audio?.elapsedMs() ?: 0) >= 3 * 60_000L) {
+                        val t = batteryTempC()
+                        if (t != null && t >= hotC) {
+                            promptedHot = true
+                            AlertDialog.Builder(this)
+                                .setMessage("机身有点热了（$t℃）。要不要先歇一下？\n继续也行，讲完这次就停。")
+                                .setPositiveButton("继续录", null)
+                                .setNeutralButton("先停下") { _, _ -> onStopBtn(emotional = false) }
+                                .show()
+                        }
                     }
                 }
             },
@@ -533,8 +554,19 @@ class MainActivity : AppCompatActivity() {
     private fun bindOnce(provider: ProcessCameraProvider, record: Boolean) {
         // 预览固定 16:9 / 1280×720：FramingWindow 的内层按 16:9 撑开，
         // 尺寸对不上就会上下把头顶裁掉。
+        // §13.2 措施 2：预览帧率压到 10fps（录制仍按设备自己的帧率编码，预览降帧不影响成片），
+        // 省的是相机管线与总线带宽，间接降低整机压力。
+        // setTargetFrameRate 是 API 33 才有的；机型不支持这个区间会抛，吞掉 —— 不能让它把相机搞挂。
+        val previewBuilder = Preview.Builder()
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                previewBuilder.setTargetFrameRate(android.util.Range(10, 10))
+            } catch (e: Exception) {
+                CrashReporter.report("warn", "预览降帧未生效（按默认帧率跑）：${e.message?.take(80)}")
+            }
+        }
         @Suppress("DEPRECATION")
-        val preview = Preview.Builder().setTargetResolution(Size(1280, 720)).build()
+        val preview = previewBuilder.setTargetResolution(Size(1280, 720)).build()
         preview.setSurfaceProvider(previewView.surfaceProvider)
         val group = UseCaseGroup.Builder().addUseCase(preview)
         if (record) {
@@ -936,6 +968,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ================= 工具 =================
+
+    /** 过热提醒阈值（电池温度 ℃）。电池温度比 SoC 结温温和些，所以卡在 42 而不是更低。
+     *  ⚠️ const val 只能写在顶层 / object / companion，写在 Activity 里会编译不过。 */
+    private val hotC = 42
+
+    /**
+     * 电池温度（℃）。用 ACTION_BATTERY_CHANGED 的 sticky 广播拿，**不需要任何权限**；
+     * 个别机型不报这项，读不到就返回 null（提示照出，只是不带温度）。
+     */
+    private fun batteryTempC(): Int? {
+        val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val t = i?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        return if (t == Int.MIN_VALUE) null else t / 10
+    }
 
     private fun fmtMs(ms: Long): String = "%02d:%02d".format(ms / 60000, ms % 60000 / 1000)
 
