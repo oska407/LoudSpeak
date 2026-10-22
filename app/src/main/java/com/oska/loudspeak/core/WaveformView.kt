@@ -15,8 +15,16 @@ class WaveformView(v: View) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFD54F.toInt() }
 
-    /** 滚动窗口样本（0..1） */
-    private val window = FloatArray(160)
+    /**
+     * 滚动窗口样本（0..1）。
+     *
+     * ⚠️ 每 50ms 一帧（AudioEngine.SR * 50 / 1000），所以这里存多少格 = 画面横跨多少秒：
+     * 320 格 = **16 秒**。2026-10-23 按用户要求「波形移动速度减半」，从 160 格（8 秒）
+     * 翻倍到 320 格 —— 同样一屏宽度走过的时间翻倍，横向推移的像素速度正好减半，
+     * 而且**不丢分辨率**（还是每 50ms 一格，不是每 100ms 一格取平均）。
+     * 想再调快慢只改这个数字：越大越慢（看到的跨度越长）。
+     */
+    private val window = FloatArray(320)
     private var windowPos = 0
 
     /** 全程概览样本（回放用） */
@@ -103,12 +111,13 @@ class WaveformView(v: View) {
         paint.color = 0xFF2A3A46.toInt()
         c.drawRect(0f, 0f, w, h, paint)
         paint.color = 0xFF4ADE80.toInt()
-        paint.strokeWidth = 4f
 
         if (playhead >= 0 && overview.isNotEmpty()) {
             // 回放：全程概览 + 已播放部分提亮 + 游标
             val n = overview.size
             val step = w / n
+            // 线宽跟着柱距走：格子变密时 4px 宽的线会互相糊成一片实心块
+            paint.strokeWidth = (step * 0.55f).coerceIn(1.2f, 4f)
             for (i in 0 until n) {
                 val a = overview[i]
                 val barH = (a * (h * 0.8f)).coerceAtLeast(3f)
@@ -122,6 +131,7 @@ class WaveformView(v: View) {
             // 录制中：滚动窗口
             val n = window.size
             val step = w / n
+            paint.strokeWidth = (step * 0.55f).coerceIn(1.2f, 4f)
             for (i in 0 until n) {
                 val a = window[(windowPos + i) % n]
                 val barH = (a * (h * 0.8f)).coerceAtLeast(3f)
