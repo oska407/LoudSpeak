@@ -1,11 +1,13 @@
 package com.oska.loudspeak.core
 
+import com.oska.loudspeak.R
 import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.ViewGroup
@@ -216,36 +218,47 @@ object Skin {
      * 递归重着色。规则只有一条：**认色不认控件**
      * —— 布局里写的基准色 → 调色板里同角色色；不在映射表里的（比如霓虹的强调色、
      * 标注的语义红）原样不动。
+     *
+     * 2026-10-24 修「换皮肤 / 换深浅后，背景不再跟着变」：
+     * 「认色」的前提是 View 上还是**基准色**。但第一套皮肤应用后，颜色已经被覆盖成
+     * 纸张米白之类，第二套皮肤的 mapColor 认不出 → 整个界面卡在上一套。
+     * 现在每个 View 第一次过这里时，把**原始背景 / 原始字色**存进 tag（ids.xml 里
+     * 的 skinOrigBg / skinOrigText），之后每次都从原始值重新映射 —— 换几套都能往返。
      */
     fun recolor(root: View, p: Palette = current) {
-        // 1) 背景：先认色，再决定要不要给「着色类控件」重新上 tint
+        // 0) 基准存档（只在首次见到这个 View 时做一次）
+        if (root.getTag(R.id.skinOrigBg) == null) {
+            root.background?.constantState?.let { root.setTag(R.id.skinOrigBg, it) }
+        }
+        val origText = (root.getTag(R.id.skinOrigText) as? Int)
+            ?: (root as? TextView)?.currentTextColor?.also { root.setTag(R.id.skinOrigText, it) }
+
+        // 1) 背景：从**原始**背景重映射（不是当前背景！），再决定要不要给 tint 类控件重上色
         var gradientBg = false
-        when (val bg = root.background) {
-            is ColorDrawable -> mapColor(bg.color, p)?.let { root.setBackgroundColor(it) }
-            is GradientDrawable -> {
-                gradientBg = true
-                val c = try { bg.color?.defaultColor } catch (_: Exception) { null }
-                val mapped = c?.let { mapColor(it, p) }
-                if (mapped != null) {
-                    val d = try {
-                        bg.constantState?.newDrawable()?.mutate() as? GradientDrawable
-                    } catch (_: Exception) { null }
-                    if (d != null) {
+        (root.getTag(R.id.skinOrigBg) as? Drawable.ConstantState)?.let { cs ->
+            val d = try { cs.newDrawable().mutate() } catch (_: Exception) { null }
+            when (d) {
+                is ColorDrawable -> mapColor(d.color, p)?.let { root.setBackgroundColor(it) }
+                is GradientDrawable -> {
+                    gradientBg = true
+                    val c = try { d.color?.defaultColor } catch (_: Exception) { null }
+                    val mapped = c?.let { mapColor(it, p) }
+                    if (mapped != null) {
                         d.setColor(mapped)
                         // 卡片类给一条淡描边，浅色下才分得清边界
                         if (mapped == p.card || mapped == p.soft) {
                             d.setStroke(Math.max(1, p.radiusDp / 14), p.stroke)
                         }
-                        root.background = d
-                    } else root.setBackgroundColor(mapped)
+                    }
+                    root.background = d
                 }
+                else -> {}   // 选择器 / 涟漪等不归皮肤管
             }
         }
 
         // 2) 文字色（Button 单独处理，它的字色是 selector 解析出来的，认不出基准色）
         if (root is TextView && root !is Button) {
-            val mapped = mapColor(root.currentTextColor, p)
-            if (mapped != null) root.setTextColor(mapped)
+            origText?.let { mapColor(it, p) }?.let { root.setTextColor(it) }
         }
 
         // 3) 字体（纸张=衬线 / 终端=等宽）。想保住原字体的控件打 tag="keepFont"
@@ -274,8 +287,9 @@ object Skin {
                 val states = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
                 if (gradientBg) {
                     // 自带背景的按钮（设置页的浅色条 SetBtn 等）：底色是 card/soft 不是强调色，
-                    // 文字按它在布局里写的正文色映射，禁用态灰掉 —— 不能套 onAccent
-                    val base = mapColor(root.currentTextColor, p) ?: p.text
+                    // 文字按它**原始**的正文色映射（不能看 currentTextColor —— 那可能已被上一套覆盖），
+                    // 禁用态灰掉 —— 不能套 onAccent
+                    val base = origText?.let { mapColor(it, p) } ?: p.text
                     root.setTextColor(ColorStateList(states, intArrayOf(p.text3, base)))
                 } else {
                     val onBg = intArrayOf(p.soft, p.accent)

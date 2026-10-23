@@ -72,8 +72,7 @@ object Annotator {
                 }
                 sb.append(if (s.uncertain) "?" else s.displayText)
                 // 并回上一句的碎片直接接着写，不留空格
-                val nextMerged = sentences.getOrNull(i + 1)?.mergePrev == true
-                if (!nextMerged) sb.append(" ")
+                appendGap(sb, sentences.getOrNull(i + 1))
             }
             if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
             // 流畅度报告独立于标注主开关：它是一段说明文字，不是给字加的标记
@@ -139,8 +138,7 @@ object Annotator {
                 sb.append(" ⚠${s.flags.joinToString("·")}")
                 sb.setSpan(ForegroundColorSpan(C_ISSUE), ps, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            val nextMerged = sentences.getOrNull(i + 1)?.mergePrev == true
-            if (!nextMerged) sb.append(" ")
+            appendGap(sb, sentences.getOrNull(i + 1))
         }
         if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
         if (fluency != null) appendFluency(sb, fluency)
@@ -173,6 +171,18 @@ object Annotator {
 
     private class Mark(val word: String, val pos: Int, val kind: Int) {
         companion object { const val PRONOUN = 0; const val FILLER = 1; const val MUZZY = 2 }
+    }
+
+    /**
+     * 句与句之间的连接（2026-10-24：识别文字要连续从左到右读）。
+     * 默认垫一个空格；但下一句以标点开头（碎片并句 / 只剩标点的空句）时不要垫，
+     * 否则会出现「每天在干嘛？ ，如果说。」这种空格夹标点的断裂感。
+     */
+    private fun appendGap(sb: SpannableStringBuilder, next: RuleEngine.Sentence?) {
+        if (next == null || next.mergePrev) return
+        val c = next.displayText.trim().firstOrNull() ?: return
+        if (c in "，。？！、；：…—·）】》」』\"',.:;?!") return
+        sb.append(" ")
     }
 
     private fun appendSep(sb: SpannableStringBuilder, chapter: Int) {

@@ -195,7 +195,7 @@ class MainActivity : LsActivity() {
         // 平移/裁剪不生效（会漏出窗口外的东西），TextureView 没有这个毛病。
         previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         previewBox.bias = Prefs.cropBias(this, curRotation())
-        autoFrame(force = true)   // 总是校准一次：没标定过就标；脸出窗就强制重标
+        autoFrame()   // 没标定过这个朝向就标；脸出窗就重标（有标定值且脸在窗内则沿用，见 autoFrame）
         setupPreviewDrag()
 
         // 长按停止 2 秒 = 情绪退出（§12.5）
@@ -601,9 +601,9 @@ class MainActivity : LsActivity() {
         val rot = curRotation()
         previewBox.bias = Prefs.cropBias(this, rot)
         if (previewView.visibility == View.VISIBLE) {
-            // 掉头后**总是**重新自动标定（不再只在「没标定过」时）：
-            // 旧朝向的标定值对掉头后的镜头位置毫无意义，歪了就要能自愈。
-            previewView.postDelayed({ autoFrame(force = true) }, 300L)   // 等 Preview 把画面回转过来
+            // 掉头后先把这一朝向**已记住**的取景位置套上（两种横向位置分头存、自动切换）；
+            // autoFrame 里只兜底：没标定过才标、脸完全跑出窗才重标（不再每次掉头都重算）。
+            previewView.postDelayed({ autoFrame() }, 300L)   // 等 Preview 把画面回转过来
         }
         try {
             // 正在录的时候改 targetRotation 可能抛异常 —— 吞掉，最多这一段 mp4 朝向不对，
@@ -621,12 +621,15 @@ class MainActivity : LsActivity() {
      * 2026-10-23 修「横屏掉头（前置摄像头从左边变到右边）后人物跑出画面左外」：
      * 原来只在「这个朝向从没标定过」时才自动标定；只要存过一次（哪怕是在转屏瞬间
      * 抓到了过渡帧、标歪了），就再也不改 —— 歪值被永久记住。
-     * 现在：
-     *  1. 转朝向 / 相机绑定后**总是**跑自动标定（没手拖过的朝向直接重标，歪值自愈）；
-     *  2. 就算手拖过（manual=true），只要检测到**脸完全跑出了可视窗**，
-     *     说明现在的偏移肯定不是用户拖的意图，强制重标一次并清掉 manual（提示用户）。
+     *
+     * 2026-10-24 按用户要求改成「**两种横向裁剪位置都记住、掉头自动切换**」：
+     *  - 每个朝向的 bias 本来就分开存（Prefs.cropBias_r<rot>，两头各一套）；
+     *  - 但 10-23 那版每次掉头都无条件重标 —— 画面来回跳，标定若抓到过渡帧还会把好值写坏；
+     *  - 现在：这一朝向**有标定值且脸在可视窗内** → 直接沿用，不掉头重算；
+     *    没标定过，或脸完全跑出可视窗 → 才重标（后者顺带清 manual，让手拖过的坏值也能自愈）。
+     *    「歪但还在窗内」的值不会被自动改 —— 长按画面可恢复自动取景。
      */
-    private fun autoFrame(attempt: Int = 0, force: Boolean = false) {
+    private fun autoFrame(attempt: Int = 0) {
         main.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
             val bmp = try { previewView.bitmap } catch (e: Exception) { null }
@@ -640,7 +643,8 @@ class MainActivity : LsActivity() {
                 val tx = -(sl / 2f) * (1f - previewBox.bias)
                 val faceVisible = facePx > -tx + cw * 0.12f && facePx < -tx + cw * 0.88f
                 val manual = Prefs.cropBiasManual(this, curRotation())
-                if (!manual || (force && !faceVisible)) {
+                val hasStored = Prefs.hasCropBias(this, curRotation())
+                if (!hasStored || !faceVisible) {
                     if (manual && !faceVisible && attempt == 0) {
                         Prefs.setCropBias(this, curRotation(), 0f, manual = false)
                         Toast.makeText(this, "人脸跑到画面外了，已重新自动取景", Toast.LENGTH_SHORT).show()
@@ -652,7 +656,7 @@ class MainActivity : LsActivity() {
                     Prefs.setCropBias(this, curRotation(), b)
                 }
             }
-            if (attempt < 2) autoFrame(attempt + 1, force)
+            if (attempt < 2) autoFrame(attempt + 1)
         }, 1100L + attempt * 600L)
     }
 
@@ -665,7 +669,7 @@ class MainActivity : LsActivity() {
                 provider.unbindAll()
                 bindOnce(provider, record)
                 if (record) startVideoSegment()
-                autoFrame(force = true)      // 相机起来后自动把脸摆到中间（脸出窗则强制重标）
+                autoFrame()      // 相机起来后：没标定过就标，脸出窗就重标（见 autoFrame 注释）
             } catch (e: Exception) {
                 CrashReporter.report("error", "相机绑定失败 mode=$mode", e)
                 Toast.makeText(this, "相机启动失败：${e.message}", Toast.LENGTH_SHORT).show()

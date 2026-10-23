@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 运行时 tag 用的资源 id（View.setTag(int, Object) 的 key 必须是应用资源 id）。
+     皮肤重着色（Skin.recolor）用它们给每个 View 存「第一次见到时的原始背景/字色」，
+     之后每次换皮肤都从原始值重新映射 —— 否则第一套皮肤把基准色覆盖后，
+     第二套皮肤的 mapColor 认不出，背景就卡在上一套不跟变了（2026-10-24 修）。 -->
+<resources>
+    <item name="skinOrigBg" type="id" />
+    <item name="skinOrigText" type="id" />
+</resources>

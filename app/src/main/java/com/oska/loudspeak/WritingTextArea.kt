@@ -1,8 +1,6 @@
 package com.oska.loudspeak
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.widget.ScrollView
@@ -10,10 +8,11 @@ import androidx.appcompat.widget.AppCompatTextView
 import kotlin.math.abs
 
 /**
- * 第 3 行「识别文字区」：像作文格子纸那样布置，并支持三种焦点行为（v6 §6 修订）。
+ * 第 3 行「识别文字区」：支持三种焦点行为（v6 §6 修订）。
  *
- * 1. **像书写**：每行文字下方画一条淡横线（见 [RuledText]），顶部对齐、逐行往下写，
- *    而不是 textView 默认的整块居中。
+ * 1. **连续书写**：识别文字按一句接一句连续排版（从左到右、自动换行），
+ *    顶部对齐、逐行往下写。（2026-10-24 用户要求：去掉每行下面的横格线 ——
+ *    原「作文格子纸」样式的 RuledText 格线已删，本类现在就是普通 TextView。）
  * 2. **自动滚动**：来了新句子就带着阻尼滑到最新一行（焦点跟着识别结果走）。
  * 3. **手动拖动**：手按上去就不自动动，随便翻；松手 2.5 秒不再看之后，
  *    用阻尼把这个区缓慢拉回「最新识别文字」的位置。
@@ -96,8 +95,7 @@ class WritingTextArea @JvmOverloads constructor(
         text.typeface = try {
             android.graphics.Typeface.create(p.font, android.graphics.Typeface.NORMAL)
         } catch (_: Exception) { text.typeface }
-        // 横格线用 text3 的半透明版本：深色皮肤上是暗线，浅色皮肤上自动变成淡灰线
-        text.ruleColor = (p.text3 and 0x00FFFFFF) or 0x50000000
+        // 横格线已按用户要求去掉（2026-10-24）；这里只刷字色与字体
         text.invalidate()
     }
 
@@ -150,36 +148,10 @@ class WritingTextArea @JvmOverloads constructor(
 }
 
 /**
- * 带书写格线的 TextView：在每一行文字的基线下方画一条淡横线。
- * 线画在 super.onDraw 之前，所以压在文字底下，不影响可读性。
+ * 识别文字的正文 TextView。
+ * 曾经画「作文格线」（每行文字下方一条横线），2026-10-24 按用户要求整条删掉；
+ * 现在没有自绘内容，保留这个类名只是少动一处调用。
  */
 class RuledText @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : AppCompatTextView(context, attrs, defStyleAttr) {
-
-    var ruleColor: Int = 0xFF2A3944.toInt()
-    var ruleWidthPx: Float = 1.2f
-
-    private val rulePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val density = context.resources.displayMetrics.density
-
-    override fun onDraw(canvas: Canvas) {
-        val l = layout
-        if (l != null && l.lineCount > 0) {
-            val fm = getPaint().fontMetrics
-            val off = fm.descent * 0.5f + lineSpacingExtra * 0.5f
-            val left = (paddingLeft + 2 * density)
-            val right = (width - paddingRight + 4 * density)
-            val y0 = l.getLineBaseline(0)
-            val y1 = l.getLineBaseline(l.lineCount - 1)
-            rulePaint.color = ruleColor
-            rulePaint.strokeWidth = ruleWidthPx * density
-            for (i in 0 until l.lineCount) {
-                val y = l.getLineBaseline(i) + off
-                if (y < y0 - lineHeight || y > y1 + lineHeight) continue
-                canvas.drawLine(left, y, right, y, rulePaint)
-            }
-        }
-        super.onDraw(canvas)
-    }
-}
+) : AppCompatTextView(context, attrs, defStyleAttr)
