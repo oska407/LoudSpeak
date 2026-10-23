@@ -1,6 +1,8 @@
 package com.oska.loudspeak.core
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import java.io.File
 import java.util.Locale
 
@@ -137,5 +139,76 @@ object ModelScanner {
 
     private fun same(a: File, b: File): Boolean = try {
         a.canonicalPath == b.canonicalPath
+    } catch (_: Exception) { false }
+
+    // ---------------- SAF 多选文件导入（首次引导 / 主界面 / 设置页共用） ----------------
+
+    /**
+     * 从系统文件选择器选中的若干文件里挑出模型装上：
+     *  - `tokens.txt` → <models>/asr/tokens.txt
+     *  - 任意 `.onnx` → <models>/asr/model.int8.onnx（多个时按名字挑最像 SenseVoice 主模型的）
+     *  - 任意 `.gguf` → <models>/llm/<原文件名>
+     *
+     * 返回一句能直接显示给用户的结果说明（不抛异常）。
+     */
+    fun importUris(ctx: Context, uris: List<Uri>, modelsDir: String): String {
+        if (uris.isEmpty()) return "没有选到文件"
+        var onnxBest: Pair<String, Uri>? = null
+        var onnxBestScore = -1
+        var tokensUri: Uri? = null
+        val ggufs = ArrayList<Pair<String, Uri>>()
+        for (u in uris) {
+            val name = queryName(ctx, u) ?: continue
+            val lower = name.lowercase(Locale.US)
+            when {
+                lower == "tokens.txt" -> tokensUri = u
+                lower.endsWith(".onnx") -> {
+                    val sc = score(name)
+                    if (sc > onnxBestScore) { onnxBestScore = sc; onnxBest = name to u }
+                }
+                lower.endsWith(".gguf") -> ggufs.add(name to u)
+            }
+        }
+
+        var asrOk = false
+        if (onnxBest != null && tokensUri != null) {
+            val dstDir = File(modelsDir, "asr").apply { mkdirs() }
+            val okModel = copyUri(ctx, onnxBest.second, File(dstDir, "model.int8.onnx"))
+            val okTokens = copyUri(ctx, tokensUri, File(dstDir, "tokens.txt"))
+            asrOk = okModel && okTokens
+        }
+        var llmCount = 0
+        if (ggufs.isNotEmpty()) {
+            val dstDir = File(modelsDir, "llm").apply { mkdirs() }
+            for ((name, u) in ggufs) if (copyUri(ctx, u, File(dstDir, name))) llmCount++
+        }
+
+        return buildString {
+            append("ASR ")
+            append(
+                when {
+                    asrOk -> "✓"
+                    onnxBest == null && tokensUri == null -> "未选到"
+                    onnxBest == null -> "✗ 缺 .onnx 模型文件"
+                    tokensUri == null -> "✗ 缺 tokens.txt 词表"
+                    else -> "✗ 拷贝失败"
+                }
+            )
+            append(" · Qwen ").append(if (llmCount > 0) "✓ $llmCount 个" else "未选到")
+        }
+    }
+
+    private fun queryName(ctx: Context, uri: Uri): String? = try {
+        ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (c.moveToFirst() && i >= 0) c.getString(i) else null
+        } ?: uri.lastPathSegment
+    } catch (_: Exception) { uri.lastPathSegment }
+
+    /** 内容 Uri → 目标文件（1MB 缓冲，10 分钟视频量级也不占内存） */
+    fun copyUri(ctx: Context, uri: Uri, dst: File): Boolean = try {
+        ctx.contentResolver.openInputStream(uri)?.use { input ->
+            dst.outputStream().use { out -> input.copyTo(out, 1 shl 20) }
+        } != null && dst.isFile && dst.length() > 0
     } catch (_: Exception) { false }
 }

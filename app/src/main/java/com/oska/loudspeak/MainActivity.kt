@@ -42,6 +42,7 @@ import com.oska.loudspeak.core.CrashReporter
 import com.oska.loudspeak.core.DbMeter
 import com.oska.loudspeak.core.GlowOverlay
 import com.oska.loudspeak.core.LcdDbView
+import com.oska.loudspeak.core.ModelScanner
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.Punctuator
 import com.oska.loudspeak.core.Annotator
@@ -230,6 +231,12 @@ class MainActivity : LsActivity() {
         updateButtons()
         idleHint()
         ensureAsrLoaded()
+        // 模型文件缺失 → 进界面后弹一次引导（自动查找 / 手动选择），不打断首帧
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val (m, t) = asr.checkFiles()
+            if (!asr.available && !asrLoading && (m?.isFile != true || t?.isFile != true)) promptNoModel()
+        }, 700)
     }
 
     /**
@@ -269,10 +276,98 @@ class MainActivity : LsActivity() {
             when {
                 asr.available -> "（点「录音」开始练习）"
                 asrLoading -> "正在加载语音模型…（首次约 15–30 秒，加载完这里会变）"
-                asr.status == "未加载" -> "还不能开始：还没找到模型文件\n（点底部「设置」→ 扫描并安装）"
-                else -> "还不能开始：${asr.status}\n（点底部「设置」→ 扫描并安装）"
+                asr.status == "未加载" -> "还不能开始：还没找到模型文件\n（点「录音」或底部「设置」→ 自动/手动装模型）"
+                else -> "还不能开始：${asr.status}\n（点「录音」或底部「设置」→ 自动/手动装模型）"
             }
         )
+    }
+
+    // ================= 没有模型时的引导（自动 / 手动） =================
+
+    private val REQ_PICK_MODEL = 401
+
+    /**
+     * 模型缺失时的引导：一次把「自动查找」和「手动选择文件」两条路都摆出来。
+     * 2026-10-23 用户要求「没有模型时候要有提示重新手动或自动载入模型的方式」。
+     */
+    private fun promptNoModel() {
+        if (asr.available || asrLoading) return
+        if (isFinishing) return
+
+        AlertDialog.Builder(this)
+            .setTitle("还没找到语音模型")
+            .setMessage("分贝、波形、画面都能照常用，只是出不了文字。\n\n" +
+                    "装模型有两种办法：\n" +
+                    "· 自动查找：扫手机里已经拷好的模型文件（Android 13+ 可能看不到 Download 目录）\n" +
+                    "· 手动选择：自己进到放模型的文件夹，把 model.int8.onnx 和 tokens.txt 一起选中\n\n" +
+                    "也可以在「设置 → 模型」里操作。")
+            .setPositiveButton("自动查找") { _, _ -> autoFindModel() }
+            .setNeutralButton("手动选择") { _, _ -> pickModelFiles() }
+            .setNegativeButton("稍后", null)
+            .show()
+    }
+
+    private fun autoFindModel() {
+        Toast.makeText(this, "正在查找模型…", Toast.LENGTH_SHORT).show()
+        asrExecutor.execute {
+            val found = try { ModelScanner.scan(this).filter { it.kind == ModelScanner.Kind.ASR } } catch (e: Exception) { emptyList() }
+            main.post {
+                when {
+                    found.isEmpty() -> AlertDialog.Builder(this)
+                        .setTitle("没自动找到模型")
+                        .setMessage("改成「手动选择」：在文件管理器里进到放模型的文件夹，\n把 model.int8.onnx 和 tokens.txt 两个一起勾上。")
+                        .setPositiveButton("手动选择") { _, _ -> pickModelFiles() }
+                        .setNegativeButton("取消", null)
+                        .show()
+                    found.size == 1 -> installFound(found[0])
+                    else -> AlertDialog.Builder(this)
+                        .setTitle("找到 ${found.size} 个，选一个安装")
+                        .setItems(found.map { it.label() }.toTypedArray()) { _, w -> installFound(found[w]) }
+                        .setNegativeButton("取消", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun installFound(f: ModelScanner.Found) {
+        Toast.makeText(this, "正在装入（${f.sizeMb}MB）…", Toast.LENGTH_SHORT).show()
+        asrExecutor.execute {
+            val ok = try { ModelScanner.install(f, Prefs.modelsDir(this)) } catch (e: Exception) { false }
+            main.post {
+                Toast.makeText(this, if (ok) "装好了，正在加载模型…" else "安装失败，换「手动选择」再试", Toast.LENGTH_LONG).show()
+                if (ok) { ensureAsrLoaded(); idleHint() }
+            }
+        }
+    }
+
+    private fun pickModelFiles() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        try { startActivityForResult(i, REQ_PICK_MODEL) } catch (e: Exception) {
+            Toast.makeText(this, "打不开文件选择器：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+        super.onActivityResult(req, res, data)
+        if (req != REQ_PICK_MODEL || res != android.app.Activity.RESULT_OK || data == null) return
+        val uris = ArrayList<android.net.Uri>()
+        data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
+        data.data?.let { uris.add(it) }
+        if (uris.isEmpty()) return
+        Toast.makeText(this, "正在导入 ${uris.size} 个文件…", Toast.LENGTH_SHORT).show()
+        asrExecutor.execute {
+            val msg = try { ModelScanner.importUris(this, uris, Prefs.modelsDir(this)) } catch (e: Exception) { "导入失败：${e.message?.take(80)}" }
+            main.post {
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                ensureAsrLoaded()
+                idleHint()
+            }
+        }
     }
 
     /** 点击屏幕任意处立即消退红晕（§7.3）——只看不改事件流向，七键照常收得到点击 */
@@ -315,7 +410,9 @@ class MainActivity : LsActivity() {
             // Toast 一闪而过；文字区常驻提示，避免「点了没反应」的错觉
             idleHint()
             Toast.makeText(this, "ASR 未就绪：${asr.status}", Toast.LENGTH_LONG).show()
-            if (asr.status.contains("缺模型")) startActivity(Intent(this, SettingsActivity::class.java))
+            // 缺模型不再直接跳设置页（跳过去也不知道该点哪）→ 弹自动/手动两条路的引导
+            val (m, t) = asr.checkFiles()
+            if (m?.isFile != true || t?.isFile != true) promptNoModel()
             return
         }
         // 权限（§5.4.1）：RECORD_AUDIO 四档必需；CAMERA 仅 ①③

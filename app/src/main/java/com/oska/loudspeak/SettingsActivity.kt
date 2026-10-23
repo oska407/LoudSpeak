@@ -23,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.oska.loudspeak.core.AsrEngine
+import com.oska.loudspeak.core.ModelScanner
 import com.oska.loudspeak.core.NetChannel
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.RuleEngine
@@ -109,7 +110,9 @@ class SettingsActivity : LsActivity() {
         tabBar = findViewById(R.id.tabBar)
         tabContent = findViewById(R.id.tabContent)
         buildTabs()
-        bindPractice(); bindMark(); bindAppearance(); bindStorage(); bindModel()
+        // ⚠️ 不能在这里 bindPractice()/bindModel()…：五个分区页面是 selectTab() 里才 inflate 的，
+        //    此时 findViewById 全返回 null，字段被赋成 null，随后 initXxx() 一用就 NPE
+        //    —— 真机「按设置按钮直接跳出（闪退）」的根因（2026-10-23）。绑定挪到 selectTab() 里。
         findViewById<TextView>(R.id.tvVersion).text = try {
             "v" + packageManager.getPackageInfo(packageName, 0).versionName
         } catch (_: Exception) { "" }
@@ -177,6 +180,8 @@ class SettingsActivity : LsActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // 后 inflate 进来的页面还没被基类重着色过，这里补一次
             Skin.recolor(tabContent)
+            // 绑定必须在页面 inflate 之后（见 onCreate 的注释）
+            bindPractice(); bindMark(); bindAppearance(); bindStorage(); bindModel()
             initPractice(); initMark(); initAppearance(); initStorage(); initModel()
         }
         val idx = index.coerceIn(0, pages.size - 1)
@@ -675,6 +680,17 @@ class SettingsActivity : LsActivity() {
         findViewById<Button>(R.id.btnSaf).setOnClickListener {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 200)
         }
+        // 手动选文件：比「选目录」更绕得开分区存储限制，用户点到模型所在文件夹直接勾文件
+        findViewById<Button>(R.id.btnPick).setOnClickListener {
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            try { startActivityForResult(i, 201) } catch (e: Exception) {
+                Toast.makeText(this, "打不开文件选择器：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+            }
+        }
         findViewById<Button>(R.id.btnCheck).setOnClickListener { checkModel() }
         findViewById<Button>(R.id.btnPerm).setOnClickListener {
             if (hasAllFiles()) Toast.makeText(this, "已经授予了", Toast.LENGTH_SHORT).show()
@@ -826,6 +842,26 @@ class SettingsActivity : LsActivity() {
         super.onActivityResult(req, res, data)
         if (req == 200 && res == Activity.RESULT_OK && data?.data != null) {
             importModels(data.data!!)
+        }
+        // 201 = 手动多选文件（.onnx + tokens.txt / .gguf）
+        if (req == 201 && res == Activity.RESULT_OK && data != null) {
+            val uris = ArrayList<Uri>()
+            data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
+            data.data?.let { uris.add(it) }
+            if (uris.isNotEmpty()) importPicked(uris)
+        }
+    }
+
+    /** 手选的若干文件 → ModelScanner 统一分类落位（与首次引导 / 主界面同一套逻辑） */
+    private fun importPicked(uris: List<Uri>) {
+        tvModelStatus.text = "导入中…（${uris.size} 个文件）"
+        asrExecutor.execute {
+            val msg = try { ModelScanner.importUris(this, uris, Prefs.modelsDir(this)) }
+            catch (e: Exception) { "导入失败：${e.message?.take(80)}" }
+            runOnUiThread {
+                tvModelStatus.text = "导入结果：$msg"
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            }
         }
     }
 

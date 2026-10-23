@@ -1,8 +1,10 @@
 package com.oska.loudspeak
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
@@ -13,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.oska.loudspeak.core.AsrEngine
+import com.oska.loudspeak.core.ModelScanner
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.Ui
 
@@ -31,6 +34,7 @@ class FirstRunActivity : LsActivity() {
     private var step = 1
     private lateinit var host: LinearLayout
     private var pad = 14
+    private val REQ_PICK = 400   // 手动选模型文件的 SAF 请求码
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -130,13 +134,87 @@ class FirstRunActivity : LsActivity() {
             host.addView(big("模型还没就位", 18f, 0xFFEF9A9A.toInt()))
             host.addView(hint("缺：${if (m?.isFile != true) "model.int8.onnx " else ""}${if (t?.isFile != true) "tokens.txt" else ""}\n" +
                     "没有模型也能进去，但暂时出不了文字（分贝、波形、画面照常用）。"))
+            host.addView(hint("装模型有两条路，自动找不到就用手动（Android 13+ 默认看不了 Download 目录，这是系统限制）："))
+            // ① 自动：扫常见位置
             host.addView(Button(this).apply {
-                text = "去扫描 / 导入模型"
-                setOnClickListener { startActivity(Intent(this@FirstRunActivity, SettingsActivity::class.java)) }
+                text = "① 自动查找已拷入的模型"
+                setOnClickListener { autoScanModel() }
             })
+            // ② 手动：系统文件选择器，自己点到放模型的文件夹去挑
+            host.addView(Button(this).apply {
+                text = "② 手动选择模型文件（.onnx + tokens.txt 一起选）"
+                setOnClickListener { pickModelFiles() }
+            })
+            host.addView(hint("手动选择的用法：在弹出的文件管理器里进入放着模型的文件夹，\n" +
+                    "把 model.int8.onnx 和 tokens.txt 两个一起勾上 → 打开/完成。"))
         }
+        host.addView(Button(this).apply {
+            text = "打开完整设置（选整个文件夹 / 全盘授权）"
+            setOnClickListener { startActivity(Intent(this@FirstRunActivity, SettingsActivity::class.java)) }
+        })
         host.addView(backBtn())
         host.addView(nextBtn("下一步") { step = 3; render() })
+    }
+
+    // ---- 模型：自动扫描 / 手动选文件 ----
+
+    private fun autoScanModel() {
+        Toast.makeText(this, "正在查找模型…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val found = try { ModelScanner.scan(this).filter { it.kind == ModelScanner.Kind.ASR } } catch (e: Exception) { emptyList() }
+            runOnUiThread {
+                when {
+                    found.isEmpty() -> androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("没自动找到模型")
+                        .setMessage("可以点「② 手动选择模型文件」，自己进到放模型的文件夹里挑；\n" +
+                                "也可以点下面的「打开完整设置」授权全盘读取后再扫一次。")
+                        .setPositiveButton("知道了", null)
+                        .show()
+                    found.size == 1 -> installFound(found[0])
+                    else -> androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("找到 ${found.size} 个，选一个安装")
+                        .setItems(found.map { it.label() }.toTypedArray()) { _, which -> installFound(found[which]) }
+                        .setNegativeButton("取消", null)
+                        .show()
+                }
+            }
+        }.start()
+    }
+
+    private fun installFound(f: ModelScanner.Found) {
+        Toast.makeText(this, "正在装入（${f.sizeMb}MB）…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val ok = try { ModelScanner.install(f, Prefs.modelsDir(this)) } catch (e: Exception) { false }
+            runOnUiThread {
+                Toast.makeText(this, if (ok) "装好了" else "安装失败，换「手动选择」再试", Toast.LENGTH_LONG).show()
+                render()
+            }
+        }.start()
+    }
+
+    private fun pickModelFiles() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        try { startActivityForResult(i, REQ_PICK) } catch (e: Exception) {
+            Toast.makeText(this, "打不开文件选择器：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+        super.onActivityResult(req, res, data)
+        if (req != REQ_PICK || res != Activity.RESULT_OK || data == null) return
+        val uris = ArrayList<Uri>()
+        data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
+        data.data?.let { uris.add(it) }
+        if (uris.isEmpty()) return
+        Toast.makeText(this, "正在导入 ${uris.size} 个文件…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val msg = try { ModelScanner.importUris(this, uris, Prefs.modelsDir(this)) } catch (e: Exception) { "导入失败：${e.message?.take(80)}" }
+            runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); render() }
+        }.start()
     }
 
     // ---- 第 3 步：给孩子看的三句话 ----

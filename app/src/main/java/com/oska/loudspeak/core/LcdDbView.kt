@@ -1,23 +1,21 @@
 package com.oska.loudspeak.core
 
 import android.graphics.Canvas
-import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.View
 
 /**
- * 分贝卡（§6.3.3）：数字**顶天立地**，L ≥ 阈值亮色、L < 阈值红色（用平滑后的 ema 判色）。
+ * 分贝卡（§6.3.3）：只有**大数字**，L ≥ 阈值亮色、L < 阈值红色（用平滑后的 ema 判色）。
  *
- * R11 起跟皮肤走（设置页「外观」可切），四种形态**故意做得不一样**，换皮肤时不只是一层色：
- *  - BARS  经典：深色液晶底 + 扫描线 + 24 段粗条（原来那套）
- *  - MINIMAL 纸张：去掉条与扫描线，只留大数字 + 一条细刻度尺（衬线字，安静）
- *  - LED   终端：40 段细 LED 点阵 + 更重的扫描线（等宽字，机器味）
- *  - GLOW  霓虹：渐变发光条 + 顶部高光（青色发光）
+ * 2026-10-23 用户要求「分贝数字下方不要有分贝动态条」→ 24 段条 / LED / 渐变条 / 细刻度尺全部删掉，
+ * 数字改为**垂直居中**（按字高算基线，不再为条让位）。判定改由「数字 + dB + 正常/偏小」三者同色表达。
  *
- * 数字是第 1 行唯一要「一眼看到」的东西，所以按卡片高度的 80% 起排，
- * 宽度不够才等比缩（右侧给 dB / 正常-偏小 留一条窄栏目）。
+ * 皮肤仍影响观感（背景、扫描线、字体），只是不再有四种条形态：
+ *  - BARS 经典：深色液晶底 + 扫描线 + 等宽字
+ *  - MINIMAL 纸张：无扫描线 + 衬线字（安静）
+ *  - LED 终端：扫描线 + 等宽字（机器味）
+ *  - GLOW 霓虹：扫描线 + 窄体粗字
  */
 class LcdDbView(private val v: View) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -75,8 +73,9 @@ class LcdDbView(private val v: View) {
             numSize *= maxW / tw
             textPaint.textSize = numSize
         }
-        // 基线压到 0.80h：数字上沿贴住卡片顶、下沿刚好落在分段条上方（条从 0.84h 起画）
-        val baseline = h * (if (style == Skin.DB_MINIMAL) 0.80f else 0.80f)
+        // 条删掉了，不再给条让位：按数字字高算基线，让数字在卡内**垂直居中**
+        val capH = numSize * 0.72f
+        val baseline = (h + capH) / 2f
         c.drawText(txt, w - pad, baseline, textPaint)
 
         // ---- 左侧：单位 + 判定（跟着阈值一起变色）----
@@ -84,74 +83,8 @@ class LcdDbView(private val v: View) {
         labelPaint.textAlign = Paint.Align.LEFT
         labelPaint.textSize = h * 0.17f
         labelPaint.color = color
-        c.drawText("dB", pad, h * 0.30f, labelPaint)
+        c.drawText("dB", pad, h * 0.40f, labelPaint)
         labelPaint.textSize = h * 0.16f
-        c.drawText(if (ok) "正常" else "偏小", pad, h * 0.56f, labelPaint)
-
-        val availW = w - pad * 2
-        when (style) {
-            Skin.DB_MINIMAL -> {
-                // 只有一条细刻度尺：太粗会抢走数字的注意力
-                val y = h * 0.88f
-                paint.color = p.lcdOff
-                c.drawRect(pad, y, pad + availW, y + 1.5f * d, paint)
-                paint.color = color
-                c.drawRect(pad, y, pad + availW * (displayL / 60f).coerceIn(0f, 1f), y + 1.5f * d, paint)
-                val tx = pad + (threshold / 60f) * availW
-                paint.color = 0xFFFFD54F.toInt()
-                c.drawRect(tx - 1f * d, y - 4f * d, tx + 1f * d, y + 5f * d, paint)
-            }
-            Skin.DB_LED -> {
-                // 40 段细 LED
-                val segCount = 40
-                val barTop = h * 0.84f
-                val barH = (h * 0.11f).coerceAtLeast(3f * d)
-                val gap = 1.2f * d
-                val segW = ((availW - gap * (segCount - 1)) / segCount).coerceAtLeast(1f)
-                val lit = (displayL / 60f * segCount).toInt().coerceIn(0, segCount)
-                for (i in 0 until segCount) {
-                    val x = pad + i * (segW + gap)
-                    paint.color = if (i < lit) color else p.lcdOff
-                    c.drawRect(x, barTop, x + segW, barTop + barH, paint)
-                }
-                val tx = pad + (threshold / 60f) * availW
-                paint.color = 0xFFD7C85B.toInt()
-                c.drawRect(tx - 1f * d, barTop - 5f * d, tx + 1f * d, barTop + barH + 4f * d, paint)
-            }
-            Skin.DB_GLOW -> {
-                // 发光渐变条：亮的一段有从亮到透的渐变，像灯管
-                val barTop = h * 0.84f
-                val barH = (h * 0.11f).coerceAtLeast(4f * d)
-                paint.color = p.lcdOff
-                c.drawRoundRect(pad, barTop, pad + availW, barTop + barH, barH / 2, barH / 2, paint)
-                val litW = availW * (displayL / 60f).coerceIn(0f, 1f)
-                if (litW > 1f) {
-                    paint.shader = LinearGradient(pad, 0f, pad + litW, 0f,
-                        color, (color and 0x00FFFFFF) or 0x66000000, Shader.TileMode.CLAMP)
-                    c.drawRoundRect(pad, barTop, pad + litW, barTop + barH, barH / 2, barH / 2, paint)
-                    paint.shader = null
-                }
-                val tx = pad + (threshold / 60f) * availW
-                paint.color = 0xFFFFD54F.toInt()
-                c.drawRect(tx - 1f * d, barTop - 5f * d, tx + 1f * d, barTop + barH + 4f * d, paint)
-            }
-            else -> {
-                // 24 段粗条（经典）
-                val segCount = 24
-                val barTop = h * 0.84f
-                val barH = (h * 0.11f).coerceAtLeast(3f * d)
-                val gap = 2.5f * d
-                val segW = ((availW - gap * (segCount - 1)) / segCount).coerceAtLeast(1f)
-                val lit = (displayL / 60f * segCount).toInt().coerceIn(0, segCount)
-                for (i in 0 until segCount) {
-                    val x = pad + i * (segW + gap)
-                    paint.color = if (i < lit) color else p.lcdOff
-                    c.drawRect(x, barTop, x + segW, barTop + barH, paint)
-                }
-                val tx = pad + (threshold / 60f) * availW
-                paint.color = 0xFFFFD54F.toInt()
-                c.drawRect(tx - 1.5f * d, barTop - 6f * d, tx + 1.5f * d, barTop + barH + 4f * d, paint)
-            }
-        }
+        c.drawText(if (ok) "正常" else "偏小", pad, h * 0.64f, labelPaint)
     }
 }

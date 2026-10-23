@@ -56,6 +56,11 @@
                 android:text="从文件管理器选目录（会搜子目录）" />
 
             <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnPick"
+                style="@style/SetBtn"
+                android:text="手动选择模型文件（.onnx + tokens.txt 一起选）" />
+
+            <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnCheck"
                 style="@style/SetBtn"
                 android:text="校验 ASR（真加载一次，约 15–30 秒）" />
