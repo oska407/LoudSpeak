@@ -21,15 +21,28 @@ class GlowOverlay(private val v: View) {
     private var animator: ValueAnimator? = null
     private val paint = Paint()
 
+    /** 浓烈度（0.35–1.0）：决定红晕最浓时的透明度，也决定带宽 */
+    private var strength = 0.8f
+
     init { v.setLayerType(View.LAYER_TYPE_SOFTWARE, null) }
 
-    /** 触发一次缺血式呼吸（连 3 次，约 3 秒） */
-    fun fire() {
+    /**
+     * 触发一次缺血式呼吸。
+     * @param times 连做几次（1–6，设置页可调）
+     * @param strength 浓烈度 1 淡 / 2 中 / 3 浓
+     */
+    fun fire(times: Int = 3, strength: Int = 2) {
         animator?.cancel()
-        // 0→1→0 一个来回 = 一次「充血/消退」；repeat 2 次 = 共 3 次呼吸
+        this.strength = when (strength) {
+            1 -> 0.45f
+            3 -> 1f
+            else -> 0.72f
+        }
+        val n = times.coerceIn(1, 6)
+        // 0→1→0 一个来回 = 一次「充血/消退」；repeatCount = n-1 即共 n 次呼吸
         animator = ValueAnimator.ofFloat(0f, 1f, 0f).apply {
             duration = 1100L
-            repeatCount = 2
+            repeatCount = n - 1
             repeatMode = ValueAnimator.RESTART
             addUpdateListener { setAlpha(it.animatedValue as Float) }
             addListener(object : AnimatorListenerAdapter() {
@@ -52,9 +65,13 @@ class GlowOverlay(private val v: View) {
     fun onDraw(c: Canvas) {
         if (alpha <= 0f) return
         val w = v.width.toFloat(); val h = v.height.toFloat()
-        val band = (w * 0.07f).coerceAtLeast(46f)   // 缺血带略加宽，更有「边缘渗血」感
+        // 带宽跟浓烈度走：浓的时候渗得更深，淡的时候只是一线
+        val band = (w * 0.07f * (0.7f + strength * 0.5f))
+            .coerceAtLeast(26f)
+            .coerceAtMost(w * 0.22f)
         // 边缘红（缺血红）透明渐隐；alpha 由呼吸动画整体控制强弱
-        val color = (0xCCFF2E26 and 0x00FFFFFF) or ((alpha * 0.8f * 255).toInt() shl 24)
+        val a = (alpha * strength * 255).toInt().coerceIn(0, 255)
+        val color = (a shl 24) or 0x00FF2E26   // 缺血红，alpha 由呼吸 × 浓烈度决定
         val transparent = 0x00000000
         paint.shader = LinearGradient(0f, 0f, band, 0f, color, transparent, Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, band, h, paint)

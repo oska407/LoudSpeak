@@ -4,8 +4,17 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.SeekBar
 import android.widget.Spinner
@@ -13,51 +22,79 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import com.oska.loudspeak.core.AsrEngine
+import com.oska.loudspeak.core.NetChannel
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
+import com.oska.loudspeak.core.Skin
 import com.oska.loudspeak.core.Ui
 import java.io.File
 
 /**
- * 设置页（§6.4 / §5.4 / §11.1 / §11.5）—— **竖版**。
+ * 设置页（竖版，R11 起分标签）。
  *
- * 为什么这块竖着：主界面是四行平铺的工作台，必须横屏；设置是「一页读下来」的清单，
- * 竖屏一列更好翻、更好点，也不会把 `分贝阈值 + 说明 + 滑杆` 挤成一行。
- * 界面结构：分组卡片（练习反馈 / 识别标注 / 难度分级 / 模型 / 存储 / 其它 / 关于），
- * 每行「标题 + 说明 + 右侧控件」，说明压在标题下面一行，不再所有字一样白一样大。
+ * 为什么分标签：原来一页从头滑到尾（练习/标注/模型/存储全挤在一列），
+ * 想随手试一下换皮肤，要滑过二十行才找得到。现在分成五页：
+ * 练习 · 标注 · 外观 · 存储 · 模型，进设置先看要改哪一类。
  *
- * 录制中不可打开（主界面已禁用「设置」键）。
+ * 标签条是自建的（5 个等宽 TextView + 下方一道 2dp 强调色）：
+ * Material 的 TabLayout 自带主题色，跟「运行时重着色」的皮肤体系打架。
+ *
+ * 换皮肤 / 换深色浅色后直接 `recreate()`：一次性把整套界面按新调色板重画，
+ * 比在内存里逐个改控件安全得多（也顺手把系统栏颜色一起刷了）。
  */
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : LsActivity() {
 
-    private lateinit var tvVersion: TextView
-    private lateinit var tvModelStatus: TextView
-    private lateinit var tvPerm: TextView
-    private lateinit var tvStorage: TextView
-    private lateinit var tvDirs: TextView
-    private lateinit var tvLevelInfo: TextView
-    private lateinit var tvLevelDetail: TextView
+    private val TAB_TITLES = listOf("练习", "标注", "外观", "存储", "模型")
+    private lateinit var tabBar: LinearLayout
+    private lateinit var tabContent: FrameLayout
+    private val tabViews = ArrayList<LinearLayout>()
+    private val tabUnderlines = ArrayList<View>()
+    private var pages: List<View> = emptyList()
+
+    // 练习页
     private lateinit var tvDbValue: TextView
     private lateinit var tvVadValue: TextView
+    private lateinit var tvGlowTimes: TextView
     private lateinit var tvGlowValue: TextView
-
     private lateinit var seekDb: SeekBar
     private lateinit var seekVad: SeekBar
+    private lateinit var seekGlowTimes: SeekBar
     private lateinit var seekGlow: SeekBar
-    private lateinit var rgGlow: RadioGroup
+    private lateinit var rgPunct: RadioGroup
+    private lateinit var rgGlowScope: RadioGroup
+    private lateinit var rgGlowStrength: RadioGroup
+    private lateinit var spLevel: Spinner
+    private lateinit var tvLevelInfo: TextView
+    private lateinit var tvLevelDetail: TextView
+
+    // 标注页
     private lateinit var swAnnot: Switch
     private lateinit var swPron: Switch
     private lateinit var swFiller: Switch
     private lateinit var swMuzzy: Switch
     private lateinit var swIssue: Switch
-    private lateinit var swLlm: Switch
-    private lateinit var swKeepText: Switch
-    private lateinit var spLevel: Spinner
+
+    // 外观页
+    private lateinit var rgColor: RadioGroup
+    private lateinit var rgSkin: RadioGroup
+    private lateinit var swNav: Switch
+
+    // 存储页
+    private lateinit var tvStorage: TextView
+    private lateinit var tvDirs: TextView
     private lateinit var spHoldDays: Spinner
     private lateinit var spHoldGb: Spinner
+    private lateinit var swKeepText: Switch
+
+    // 模型页
+    private lateinit var tvModelStatus: TextView
+    private lateinit var tvPerm: TextView
+    private lateinit var tvNetStatus: TextView
+    private lateinit var tvPcAddr: TextView
+    private lateinit var swLlm: Switch
+    private lateinit var rgNet: RadioGroup
 
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
@@ -69,226 +106,89 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
-        bindViews()
-        initValues()
-        wireActions()
-        refreshPerm()
-        refreshModelStatus()
+        tabBar = findViewById(R.id.tabBar)
+        tabContent = findViewById(R.id.tabContent)
+        buildTabs()
+        bindPractice(); bindMark(); bindAppearance(); bindStorage(); bindModel()
+        findViewById<TextView>(R.id.tvVersion).text = try {
+            "v" + packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (_: Exception) { "" }
+        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
+        selectTab(intent.getIntExtra("tab", 0))
+        Ui.hideStatusBar(this)
     }
 
     override fun onResume() {
         super.onResume()
         refreshPerm()
-        if (::tvModelStatus.isInitialized) refreshModelStatus()
+        refreshModelStatus()
         refreshStorage()
         refreshLevel()
+        refreshNet()
     }
 
-    private fun bindViews() {
-        tvVersion = findViewById(R.id.tvVersion)
-        tvModelStatus = findViewById(R.id.tvModelStatus)
-        tvPerm = findViewById(R.id.tvPerm)
-        tvStorage = findViewById(R.id.tvStorage)
-        tvDirs = findViewById(R.id.tvDirs)
-        tvLevelInfo = findViewById(R.id.tvLevelInfo)
-        tvLevelDetail = findViewById(R.id.tvLevelDetail)
-        tvDbValue = findViewById(R.id.tvDbValue)
-        tvVadValue = findViewById(R.id.tvVadValue)
-        tvGlowValue = findViewById(R.id.tvGlowValue)
-        seekDb = findViewById(R.id.seekDb)
-        seekVad = findViewById(R.id.seekVad)
-        seekGlow = findViewById(R.id.seekGlow)
-        rgGlow = findViewById(R.id.rgGlow)
-        swAnnot = findViewById(R.id.swAnnot)
-        swPron = findViewById(R.id.swPron)
-        swFiller = findViewById(R.id.swFiller)
-        swMuzzy = findViewById(R.id.swMuzzy)
-        swIssue = findViewById(R.id.swIssue)
-        swLlm = findViewById(R.id.swLlm)
-        swKeepText = findViewById(R.id.swKeepText)
-        spLevel = findViewById(R.id.spLevel)
-        spHoldDays = findViewById(R.id.spHoldDays)
-        spHoldGb = findViewById(R.id.spHoldGb)
-    }
+    // ================= 标签 =================
 
-    // ================= 初始化取值 =================
-
-    private fun initValues() {
-        tvVersion.text = try {
-            "v" + packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (_: Exception) { "" }
-
-        // 分贝阈值 10–50（F1）
-        seekDb.max = 40
-        seekDb.progress = Prefs.dbThreshold(this) - 10
-        tvDbValue.text = Prefs.dbThreshold(this).toString()
-
-        // 句末停顿 400–1200（B2）
-        seekVad.max = 8
-        seekVad.progress = ((Prefs.vadSilenceMs(this) - 400) / 100).coerceIn(0, 8)
-        tvVadValue.text = "${Prefs.vadSilenceMs(this)}ms"
-
-        // 红晕呈现（§7.3 三选一）
-        when (Prefs.glowMode(this)) {
-            1 -> rgGlow.check(R.id.rbGlow1)
-            2 -> rgGlow.check(R.id.rbGlow2)
-            else -> rgGlow.check(R.id.rbGlow0)
-        }
-        // 红晕最短间隔 1–10s（D4）
-        seekGlow.max = 9
-        seekGlow.progress = (Prefs.glowDebounceSec(this) - 1).coerceIn(0, 9)
-        tvGlowValue.text = "${Prefs.glowDebounceSec(this)}s"
-
-        // 标注开关
-        swAnnot.isChecked = Prefs.annotEnabled(this)
-        swPron.isChecked = Prefs.annotPronouns(this)
-        swFiller.isChecked = Prefs.annotFillers(this)
-        swMuzzy.isChecked = Prefs.annotMuzzy(this)
-        swIssue.isChecked = Prefs.annotIssues(this)
-        applyAnnotEnabled()
-
-        // 分级（§8.6）
-        spLevel.adapter = simpleAdapter(
-            listOf("自动（按第几次会话递进）", "1 · L1 指代词", "2 · ＋L3 口头禅",
-                "3 · ＋L2 模糊词", "4 · ＋L4-a 缺主体", "5 · 全开")
-        )
-        spLevel.setSelection(Prefs.levelOverride(this).coerceIn(0, 5), false)
-        spLevel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
-                Prefs.setLevelOverride(this@SettingsActivity, pos)
-                refreshLevel()
+    private fun buildTabs() {
+        val p = Skin.palette(this)
+        val d = resources.displayMetrics.density
+        tabBar.removeAllViews()
+        tabViews.clear(); tabUnderlines.clear()
+        for ((i, t) in TAB_TITLES.withIndex()) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(0, (8 * d).toInt(), 0, 0)
+                isClickable = true
+                setOnClickListener { selectTab(i) }
             }
-            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
-        }
-        refreshLevel()
-
-        // 模型
-        swLlm.isChecked = Prefs.llmEnabled(this)
-
-        // 存储
-        swKeepText.isChecked = Prefs.keepTextOnDelete(this)
-        val dayOpts = listOf(7, 14, 30, 60, 90, 180)
-        spHoldDays.adapter = simpleAdapter(dayOpts.map { "$it 天" })
-        spHoldDays.setSelection(dayOpts.indexOf(Prefs.retentionDays(this)).let { if (it < 0) 2 else it }, false)
-        spHoldDays.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
-                Prefs.setRetentionDays(this@SettingsActivity, dayOpts[pos]); refreshStorage()
+            val label = TextView(this).apply {
+                text = t
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(if (i == 0) p.accent else p.text2)
             }
-            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
-        }
-        val gbOpts = listOf(2, 5, 10, 20, 50)
-        spHoldGb.adapter = simpleAdapter(gbOpts.map { "$it GB" })
-        spHoldGb.setSelection(gbOpts.indexOf(Prefs.retentionGb(this)).let { if (it < 0) 2 else it }, false)
-        spHoldGb.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
-                Prefs.setRetentionGb(this@SettingsActivity, gbOpts[pos]); refreshStorage()
-            }
-            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
-        }
-
-        findViewById<TextView>(R.id.tvAbout).text = buildString {
-            append("大声说 —— 帮她少说「这个那个」，把话说完整。\n")
-            append("完全离线：不联网、不申请网络权限，录音录像只存在这台手机里。\n")
-            append("谁的记录谁能删：她可以删自己的会话（进回收站 7 天，可恢复）。\n")
-            append("不给分、不给星、不排名 —— 只让她看见自己说的话。")
-        }
-    }
-
-    private fun simpleAdapter(items: List<String>): android.widget.ArrayAdapter<String> =
-        android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, items).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
-
-    // ================= 交互 =================
-
-    private fun wireActions() {
-        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
-
-        seekDb.setOnSeekBarChangeListener(object : SimpleSeek() {
-            override fun onChange(p: Int) {
-                val v = p + 10
-                Prefs.setDbThreshold(this@SettingsActivity, v)
-                tvDbValue.text = v.toString()
-            }
-        })
-        seekVad.setOnSeekBarChangeListener(object : SimpleSeek() {
-            override fun onChange(p: Int) {
-                val v = 400 + p * 100
-                Prefs.setVadSilenceMs(this@SettingsActivity, v)
-                tvVadValue.text = "${v}ms"
-            }
-        })
-        seekGlow.setOnSeekBarChangeListener(object : SimpleSeek() {
-            override fun onChange(p: Int) {
-                val v = p + 1
-                Prefs.setGlowDebounceSec(this@SettingsActivity, v)
-                tvGlowValue.text = "${v}s"
-            }
-        })
-        rgGlow.setOnCheckedChangeListener { _, id ->
-            Prefs.setGlowMode(this, when (id) {
-                R.id.rbGlow1 -> 1
-                R.id.rbGlow2 -> 2
-                else -> 0
-            })
-        }
-
-        swAnnot.setOnCheckedChangeListener { _, v ->
-            Prefs.setAnnotEnabled(this, v); applyAnnotEnabled()
-        }
-        swPron.setOnCheckedChangeListener { _, v -> Prefs.setAnnotPronouns(this, v) }
-        swFiller.setOnCheckedChangeListener { _, v -> Prefs.setAnnotFillers(this, v) }
-        swMuzzy.setOnCheckedChangeListener { _, v -> Prefs.setAnnotMuzzy(this, v) }
-        swIssue.setOnCheckedChangeListener { _, v -> Prefs.setAnnotIssues(this, v) }
-        findViewById<Button>(R.id.btnLegend).setOnClickListener { showLegend() }
-
-        swLlm.setOnCheckedChangeListener { _, v ->
-            Prefs.setLlmEnabled(this, v); refreshModelStatus()
-        }
-        swKeepText.setOnCheckedChangeListener { _, v -> Prefs.setKeepTextOnDelete(this, v) }
-
-        findViewById<Button>(R.id.btnScan).setOnClickListener { scanModels() }
-        findViewById<Button>(R.id.btnSaf).setOnClickListener {
-            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 200)
-        }
-        findViewById<Button>(R.id.btnCheck).setOnClickListener { checkModel() }
-        findViewById<Button>(R.id.btnPerm).setOnClickListener {
-            if (hasAllFiles()) {
-                Toast.makeText(this, "已经授予了", Toast.LENGTH_SHORT).show()
-            } else if (android.os.Build.VERSION.SDK_INT >= 30) {
-                try {
-                    startActivity(Intent(
-                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                        Uri.parse("package:$packageName")))
-                } catch (e: Exception) {
-                    Toast.makeText(this, "打不开系统页：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+            val underline = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams((26 * d).toInt(), (2 * d).toInt()).apply {
+                    topMargin = (7 * d).toInt()
                 }
+                setBackgroundColor(if (i == 0) p.accent else 0x00000000)
             }
+            item.addView(label); item.addView(underline)
+            item.tag = label
+            tabBar.addView(item)
+            tabViews.add(item); tabUnderlines.add(underline)
         }
-
-        findViewById<Button>(R.id.btnChangeDir).setOnClickListener { changeDirDialog() }
-        findViewById<Button>(R.id.btnMigrate).setOnClickListener { migrateDialog() }
-        findViewById<Button>(R.id.btnResetDir).setOnClickListener { resetDir() }
-        findViewById<Button>(R.id.btnCleanup).setOnClickListener { showCleanup() }
-        findViewById<Button>(R.id.btnTrash).setOnClickListener {
-            startActivity(Intent(this, TrashActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnEmptyTrash).setOnClickListener { confirmEmptyTrash() }
-
-        findViewById<Button>(R.id.btnSelf).setOnClickListener {
-            startActivity(Intent(this, SelfCheckActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnCapture).setOnClickListener {
-            startActivity(Intent(this, CaptureVerifyActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnErr).setOnClickListener {
-            startActivity(Intent(this, ErrorsActivity::class.java))
-        }
-
-        Ui.hideStatusBar(this)
     }
 
-    /** SeekBar 只要「值变了」这一件事，三个滑杆共用一个空实现壳子 */
+    private fun selectTab(index: Int) {
+        if (pages.isEmpty()) {
+            // 五个分区一次性 inflate，之后只切可见性：来回切标签不重建界面
+            pages = listOf(
+                layoutInflater.inflate(R.layout.settings_practice, tabContent, false),
+                layoutInflater.inflate(R.layout.settings_mark, tabContent, false),
+                layoutInflater.inflate(R.layout.settings_appearance, tabContent, false),
+                layoutInflater.inflate(R.layout.settings_storage, tabContent, false),
+                layoutInflater.inflate(R.layout.settings_model, tabContent, false)
+            )
+            tabContent.removeAllViews()
+            for (v in pages) tabContent.addView(v, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // 后 inflate 进来的页面还没被基类重着色过，这里补一次
+            Skin.recolor(tabContent)
+            initPractice(); initMark(); initAppearance(); initStorage(); initModel()
+        }
+        val idx = index.coerceIn(0, pages.size - 1)
+        pages.forEachIndexed { i, v -> v.visibility = if (i == idx) View.VISIBLE else View.GONE }
+        val p = Skin.palette(this)
+        for (i in tabViews.indices) {
+            (tabViews[i].tag as? TextView)?.setTextColor(if (i == idx) p.accent else p.text2)
+            tabUnderlines[i].setBackgroundColor(if (i == idx) p.accent else 0x00000000)
+        }
+    }
+
+    /** SeekBar 只要「值变了」这一件事，几个滑杆共用一个空实现壳子 */
     private abstract class SimpleSeek : SeekBar.OnSeekBarChangeListener {
         abstract fun onChange(p: Int)
         override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { onChange(p) }
@@ -296,41 +196,136 @@ class SettingsActivity : AppCompatActivity() {
         override fun onStopTrackingTouch(s: SeekBar?) {}
     }
 
-    /** 主开关关掉时，四个子项灰掉（看得见但不能按，不能直接消失） */
-    private fun applyAnnotEnabled() {
-        val on = swAnnot.isChecked
-        for (v in listOf<android.view.View>(swPron, swFiller, swMuzzy, swIssue)) {
-            v.isEnabled = on
-            v.alpha = if (on) 1f else 0.4f
+    private fun simpleAdapter(items: List<String>): android.widget.ArrayAdapter<String> =
+        android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, items).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
+
+    // ================= 练习页 =================
+
+    private fun bindPractice() {
+        tvDbValue = findViewById(R.id.tvDbValue)
+        tvVadValue = findViewById(R.id.tvVadValue)
+        tvGlowTimes = findViewById(R.id.tvGlowTimes)
+        tvGlowValue = findViewById(R.id.tvGlowValue)
+        seekDb = findViewById(R.id.seekDb)
+        seekVad = findViewById(R.id.seekVad)
+        seekGlowTimes = findViewById(R.id.seekGlowTimes)
+        seekGlow = findViewById(R.id.seekGlow)
+        rgPunct = findViewById(R.id.rgPunct)
+        rgGlowScope = findViewById(R.id.rgGlowScope)
+        rgGlowStrength = findViewById(R.id.rgGlowStrength)
+        spLevel = findViewById(R.id.spLevel)
+        tvLevelInfo = findViewById(R.id.tvLevelInfo)
+        tvLevelDetail = findViewById(R.id.tvLevelDetail)
     }
 
-    private fun showLegend() {
-        val msg = buildString {
-            append(com.oska.loudspeak.core.Annotator.legend())
-            append("\n\n（这些都能在上面逐项关掉）")
-        }
-        AlertDialog.Builder(this)
-            .setTitle("识别标注图例")
-            .setMessage(msg)
-            .setPositiveButton("知道了", null)
-            .show()
-    }
+    private fun initPractice() {
+        seekDb.max = 40
+        seekDb.progress = Prefs.dbThreshold(this) - 10
+        tvDbValue.text = Prefs.dbThreshold(this).toString()
+        seekDb.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = p + 10
+                Prefs.setDbThreshold(this@SettingsActivity, v)
+                tvDbValue.text = v.toString()
+            }
+        })
 
-    // ================= 难度分级（§8.6） =================
+        seekVad.max = 8
+        seekVad.progress = ((Prefs.vadSilenceMs(this) - 400) / 100).coerceIn(0, 8)
+        tvVadValue.text = "${Prefs.vadSilenceMs(this)}ms"
+        seekVad.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = 400 + p * 100
+                Prefs.setVadSilenceMs(this@SettingsActivity, v)
+                tvVadValue.text = "${v}ms"
+            }
+        })
+
+        rgPunct.check(when (Prefs.punctMode(this)) {
+            0 -> R.id.rbPunctOff
+            2 -> R.id.rbPunctQwen
+            else -> R.id.rbPunctRule
+        })
+        rgPunct.setOnCheckedChangeListener { _, id ->
+            Prefs.setPunctMode(this, when (id) {
+                R.id.rbPunctOff -> 0
+                R.id.rbPunctQwen -> 2
+                else -> 1
+            })
+        }
+
+        rgGlowScope.check(when (Prefs.glowScope(this)) {
+            1 -> R.id.rbScopeFull
+            2 -> R.id.rbScopeOff
+            else -> R.id.rbScopeVideo
+        })
+        rgGlowScope.setOnCheckedChangeListener { _, id ->
+            Prefs.setGlowScope(this, when (id) {
+                R.id.rbScopeFull -> 1
+                R.id.rbScopeOff -> 2
+                else -> 0
+            })
+        }
+
+        seekGlowTimes.max = 5
+        seekGlowTimes.progress = (Prefs.glowTimes(this) - 1).coerceIn(0, 5)
+        tvGlowTimes.text = "${Prefs.glowTimes(this)} 次"
+        seekGlowTimes.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = p + 1
+                Prefs.setGlowTimes(this@SettingsActivity, v)
+                tvGlowTimes.text = "$v 次"
+            }
+        })
+
+        rgGlowStrength.check(when (Prefs.glowStrength(this)) {
+            1 -> R.id.rbStr1
+            3 -> R.id.rbStr3
+            else -> R.id.rbStr2
+        })
+        rgGlowStrength.setOnCheckedChangeListener { _, id ->
+            Prefs.setGlowStrength(this, when (id) {
+                R.id.rbStr1 -> 1
+                R.id.rbStr3 -> 3
+                else -> 2
+            })
+        }
+
+        seekGlow.max = 9
+        seekGlow.progress = (Prefs.glowDebounceSec(this) - 1).coerceIn(0, 9)
+        tvGlowValue.text = "${Prefs.glowDebounceSec(this)}s"
+        seekGlow.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = p + 1
+                Prefs.setGlowDebounceSec(this@SettingsActivity, v)
+                tvGlowValue.text = "${v}s"
+            }
+        })
+
+        spLevel.adapter = simpleAdapter(listOf(
+            "自动（按第几次会话递进）", "1 · L1 指代词", "2 · ＋L3 口头禅",
+            "3 · ＋L2 模糊词", "4 · ＋L4-a 缺主体", "5 · 全开"))
+        spLevel.setSelection(Prefs.levelOverride(this).coerceIn(0, 5), false)
+        spLevel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                Prefs.setLevelOverride(this@SettingsActivity, pos); refreshLevel()
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+        refreshLevel()
+    }
 
     private fun refreshLevel() {
+        if (!::tvLevelInfo.isInitialized) return
         val n = Prefs.sessionCount(this)
         val override = Prefs.levelOverride(this)
         val lv = RuleEngine.levels(n, override)
         val auto = RuleEngine.autoLevelIndex(n)
         tvLevelInfo.text = buildString {
             append("这是第 ").append(n).append(" 次会话")
-            if (override == 0) {
-                append(" · 自动到第 ").append(auto).append(" 级")
-            } else {
-                append(" · 已手动锁定")
-            }
+            if (override == 0) append(" · 自动到第 ").append(auto).append(" 级") else append(" · 已手动锁定")
             append('\n').append("当前在抓：").append(lv.name)
         }
         tvLevelDetail.text = buildString {
@@ -343,68 +338,193 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    // ================= 存储与清理（§11.5） =================
+    // ================= 标注页 =================
 
-    /** 扫整个会话目录是文件 IO，放后台线程；设置页每次回来刷一次 */
+    private fun bindMark() {
+        swAnnot = findViewById(R.id.swAnnot)
+        swPron = findViewById(R.id.swPron)
+        swFiller = findViewById(R.id.swFiller)
+        swMuzzy = findViewById(R.id.swMuzzy)
+        swIssue = findViewById(R.id.swIssue)
+    }
+
+    private fun initMark() {
+        swAnnot.isChecked = Prefs.annotEnabled(this)
+        swPron.isChecked = Prefs.annotPronouns(this)
+        swFiller.isChecked = Prefs.annotFillers(this)
+        swMuzzy.isChecked = Prefs.annotMuzzy(this)
+        swIssue.isChecked = Prefs.annotIssues(this)
+        applyAnnotEnabled()
+        swAnnot.setOnCheckedChangeListener { _, v -> Prefs.setAnnotEnabled(this, v); applyAnnotEnabled() }
+        swPron.setOnCheckedChangeListener { _, v -> Prefs.setAnnotPronouns(this, v) }
+        swFiller.setOnCheckedChangeListener { _, v -> Prefs.setAnnotFillers(this, v) }
+        swMuzzy.setOnCheckedChangeListener { _, v -> Prefs.setAnnotMuzzy(this, v) }
+        swIssue.setOnCheckedChangeListener { _, v -> Prefs.setAnnotIssues(this, v) }
+        findViewById<Button>(R.id.btnLegend).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("识别标注图例")
+                .setMessage(com.oska.loudspeak.core.Annotator.legend() + "\n\n（这些都能在上面逐项关掉）")
+                .setPositiveButton("知道了", null)
+                .show()
+        }
+    }
+
+    /** 主开关关掉时，四个子项灰掉（看得见但不能按，不能直接消失） */
+    private fun applyAnnotEnabled() {
+        val on = swAnnot.isChecked
+        for (v in listOf<View>(swPron, swFiller, swMuzzy, swIssue)) {
+            v.isEnabled = on
+            v.alpha = if (on) 1f else 0.4f
+        }
+    }
+
+    // ================= 外观页 =================
+
+    private fun bindAppearance() {
+        rgColor = findViewById(R.id.rgColor)
+        rgSkin = findViewById(R.id.rgSkin)
+        swNav = findViewById(R.id.swNav)
+    }
+
+    private fun initAppearance() {
+        rgColor.check(when (Prefs.colorMode(this)) {
+            1 -> R.id.rbLight
+            2 -> R.id.rbAuto
+            else -> R.id.rbDark
+        })
+        rgColor.setOnCheckedChangeListener { _, id ->
+            val target = when (id) {
+                R.id.rbLight -> 1
+                R.id.rbAuto -> 2
+                else -> 0
+            }
+            if (target != Prefs.colorMode(this)) {
+                Prefs.setColorMode(this, target)
+                restartForSkin()
+            }
+        }
+
+        // 皮肤选项带一句性格描述（两行），比一行纯名字好选
+        val p = Skin.palette(this)
+        val ids = listOf(R.id.rbSkinClassic, R.id.rbSkinPaper, R.id.rbSkinTerminal, R.id.rbSkinNeon)
+        for ((i, id) in ids.withIndex()) {
+            val rb = findViewById<android.widget.RadioButton>(id)
+            val name = Skin.skinName(i)
+            val ss = SpannableString("$name\n${Skin.skinDesc(i)}")
+            ss.setSpan(RelativeSizeSpan(0.80f), name.length + 1, ss.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            ss.setSpan(ForegroundColorSpan(p.text2), name.length + 1, ss.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            rb.setText(ss)
+        }
+        rgSkin.check(ids[Prefs.skin(this).coerceIn(0, 3)])
+        rgSkin.setOnCheckedChangeListener { _, id ->
+            val idx = ids.indexOf(id).coerceAtLeast(0)
+            if (idx != Prefs.skin(this)) {
+                Prefs.setSkin(this, idx)
+                restartForSkin()
+            }
+        }
+
+        swNav.isChecked = Prefs.navHidden(this)
+        swNav.setOnCheckedChangeListener { _, v ->
+            Prefs.setNavHidden(this, v)
+            Ui.applySystemBars(this, Skin.palette(this), v)
+        }
+    }
+
+    /** 换皮肤 / 换色彩模式：直接重建这个界面，整套按新调色板重画 */
+    private fun restartForSkin() {
+        recreate()
+    }
+
+    // ================= 存储页 =================
+
+    private fun bindStorage() {
+        tvStorage = findViewById(R.id.tvStorage)
+        tvDirs = findViewById(R.id.tvDirs)
+        spHoldDays = findViewById(R.id.spHoldDays)
+        spHoldGb = findViewById(R.id.spHoldGb)
+        swKeepText = findViewById(R.id.swKeepText)
+    }
+
+    private fun initStorage() {
+        swKeepText.isChecked = Prefs.keepTextOnDelete(this)
+        swKeepText.setOnCheckedChangeListener { _, v -> Prefs.setKeepTextOnDelete(this, v) }
+
+        val dayOpts = listOf(7, 14, 30, 60, 90, 180)
+        spHoldDays.adapter = simpleAdapter(dayOpts.map { "$it 天" })
+        spHoldDays.setSelection(dayOpts.indexOf(Prefs.retentionDays(this)).let { if (it < 0) 2 else it }, false)
+        spHoldDays.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                Prefs.setRetentionDays(this@SettingsActivity, dayOpts[pos]); refreshStorage()
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+
+        val gbOpts = listOf(2, 5, 10, 20, 50)
+        spHoldGb.adapter = simpleAdapter(gbOpts.map { "$it GB" })
+        spHoldGb.setSelection(gbOpts.indexOf(Prefs.retentionGb(this)).let { if (it < 0) 2 else it }, false)
+        spHoldGb.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                Prefs.setRetentionGb(this@SettingsActivity, gbOpts[pos]); refreshStorage()
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+
+        findViewById<Button>(R.id.btnChangeDir).setOnClickListener { changeDirDialog() }
+        findViewById<Button>(R.id.btnMigrate).setOnClickListener { migrateDialog() }
+        findViewById<Button>(R.id.btnResetDir).setOnClickListener { resetDir() }
+        findViewById<Button>(R.id.btnCleanup).setOnClickListener { showCleanup() }
+        findViewById<Button>(R.id.btnTrash).setOnClickListener {
+            startActivity(Intent(this, TrashActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnEmptyTrash).setOnClickListener { confirmEmptyTrash() }
+    }
+
     private fun refreshStorage() {
         if (!::tvStorage.isInitialized) return
         tvStorage.text = "统计中…"
         asrExecutor.execute {
-            val st = SessionStore(this@SettingsActivity)
+            val st = SessionStore(this)
             val trash = st.trashSizeBytes()
-            val all = st.sessionsSizeBytes()
-            val sessions = (all - trash).coerceAtLeast(0)
-            val root = File(Prefs.modelsDir(this@SettingsActivity)).parentFile ?: filesDir
+            val sessions = (st.sessionsSizeBytes() - trash).coerceAtLeast(0)
+            val root = File(Prefs.modelsDir(this)).parentFile ?: filesDir
             val free = root.usableSpace
             val oldest = st.oldestSessions(1).firstOrNull()
             val ageDays = oldest?.let { (System.currentTimeMillis() - it.startedAt) / 86_400_000 } ?: 0
-            val limitGb = Prefs.retentionGb(this@SettingsActivity)
-            val limitDays = Prefs.retentionDays(this@SettingsActivity)
-
+            val limitGb = Prefs.retentionGb(this)
+            val limitDays = Prefs.retentionDays(this)
             val warn = StringBuilder()
-            // §11.5：超阈值**只提示，不自动删**
             if (sessions > limitGb * 1_000_000_000L) warn.append("⚠ 会话已超过 ${limitGb}GB，可以看看最旧的几条\n")
-            if (ageDays > limitDays) warn.append("⚠ 最旧的一条已经 ${ageDays} 天（超过 ${limitDays} 天，只提示不自动删）\n")
+            if (ageDays > limitDays) warn.append("⚠ 最旧的一条已经 $ageDays 天（超过 $limitDays 天，只提示不自动删）\n")
             if (free in 1..2_000_000_000L) warn.append("⚠ 剩余空间不足 2GB\n")
-
-            val txt = "${warn}会话 %s · 回收站 %s · 可用 %s".format(
-                gb(sessions), gb(trash), gb(free))
+            val txt = "${warn}会话 ${gb(sessions)} · 回收站 ${gb(trash)} · 可用 ${gb(free)}"
             val dirs = buildString {
                 val custom = Prefs.sessionsRootCustom(this@SettingsActivity)
                 append("模型：").append(Prefs.modelsDir(this@SettingsActivity)).append('\n')
                 append("录制：").append(Prefs.sessionsRoot(this@SettingsActivity))
                 append(if (custom.isNotBlank()) "（自定义）" else "（默认）")
             }
-            runOnUiThread {
-                tvStorage.text = txt
-                tvDirs.text = dirs
-            }
+            runOnUiThread { tvStorage.text = txt; tvDirs.text = dirs }
         }
     }
 
     private fun gb(b: Long): String = "%.2fGB".format(b / 1e9)
 
-    /**
-     * 清理建议：列出最旧的 10 条让用户自己勾（§11.5「而不是替用户决定删哪些」）。
-     * 勾选后只做软删除（进回收站），回收站里还能逐条恢复。
-     */
     private fun showCleanup() {
         val st = SessionStore(this)
         val olds = st.oldestSessions(10)
-        if (olds.isEmpty()) {
-            Toast.makeText(this, "还没有会话记录", Toast.LENGTH_SHORT).show(); return
-        }
+        if (olds.isEmpty()) { Toast.makeText(this, "还没有会话记录", Toast.LENGTH_SHORT).show(); return }
         val labels = olds.map { r ->
-            val d = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
-                .format(java.util.Date(r.startedAt))
+            val d = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(r.startedAt))
             "   %s · %d分钟 · %.0fMB".format(d, r.durationMs / 60000, st.dirSizeBytes(File(r.dirPath)) / 1e6)
         }.toTypedArray()
         val checked = BooleanArray(olds.size)
         val keepText = Prefs.keepTextOnDelete(this)
         AlertDialog.Builder(this)
             .setTitle("清理建议：最旧的 ${olds.size} 条")
-            .setMessage(if (keepText) "会移入回收站（可恢复）；按当前设置只删音视频、保留转写文字。"
-            else "会移入回收站（保留 ${Prefs.TRASH_KEEP_DAYS} 天，可恢复）。")
+            .setMessage(
+                if (keepText) "会移入回收站（可恢复）；按当前设置只删音视频、保留转写文字。"
+                else "会移入回收站（保留 ${Prefs.TRASH_KEEP_DAYS} 天，可恢复）。")
             .setMultiChoiceItems(labels, checked) { _, w, v -> checked[w] = v }
             .setNegativeButton("先不删", null)
             .setPositiveButton("移入回收站") { _, _ ->
@@ -416,12 +536,9 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    /** 清空回收站：永久删除，所以必须先确认（§11.5 绝不静默删除） */
     private fun confirmEmptyTrash() {
         val st = SessionStore(this)
-        if (st.listTrash().isEmpty()) {
-            Toast.makeText(this, "回收站是空的", Toast.LENGTH_SHORT).show(); return
-        }
+        if (st.listTrash().isEmpty()) { Toast.makeText(this, "回收站是空的", Toast.LENGTH_SHORT).show(); return }
         AlertDialog.Builder(this)
             .setTitle("清空回收站")
             .setMessage("回收站里的会话会被永久删除，不可恢复。要继续吗？")
@@ -436,21 +553,17 @@ class SettingsActivity : AppCompatActivity() {
 
     // ================= 存放位置（§11.1） =================
 
-    /**
-     * 改录制存放目录。§14.1 权限路线是「SAF 为主、手填绝对路径为辅」，
-     * 但 mp4 只能写真实文件路径（MediaRecorder 不认 content:// 流），
-     * 所以这里走**手填绝对路径 + 常用位置**，改完先试写再落设置。
-     */
     private fun changeDirDialog() {
         val input = EditText(this).apply {
-            setText(if (Prefs.sessionsRootCustom(this@SettingsActivity).isNotBlank())
-                Prefs.sessionsRootCustom(this@SettingsActivity)
-            else Prefs.sessionsRoot(this@SettingsActivity))
+            setText(
+                if (Prefs.sessionsRootCustom(this@SettingsActivity).isNotBlank())
+                    Prefs.sessionsRootCustom(this@SettingsActivity)
+                else Prefs.sessionsRoot(this@SettingsActivity))
             setSelection(text.length)
             hint = "/storage/emulated/0/SpeakClear/sessions"
         }
         val quick = arrayOf(
-            "App 目录（默认，免权限）→ ${Prefs.defaultSessionsRoot(this)}",
+            "App 目录（默认，免权限）",
             "公共目录 /storage/emulated/0/SpeakClear/sessions（需「所有文件访问」）"
         )
         AlertDialog.Builder(this)
@@ -484,11 +597,10 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    /** 切目录前问一句要不要把老记录一起搬（§11.1「用户主动触发才搬移」） */
     private fun askMigrateThen(path: String) {
         AlertDialog.Builder(this)
             .setTitle("把已有记录一起搬过去吗？")
-            .setMessage("搬移过程可能持续几十秒，别中途退出。\n不搬也可以：老记录留在原处，只是新的写到这里。")
+            .setMessage("搬移可能持续几十秒，别中途退出。\n不搬也可以：老记录留在原处，只是新的写到这里。")
             .setPositiveButton("一起搬") { _, _ -> doMigrate(path) }
             .setNegativeButton("只改设置") { _, _ ->
                 SessionStore(this).switchRoot(path)
@@ -502,7 +614,8 @@ class SettingsActivity : AppCompatActivity() {
         tvStorage.text = "迁移中…请勿离开"
         asrExecutor.execute {
             val st = SessionStore(this)
-            val (n, err) = if (targetPath != null) st.migrateTo(targetPath) else st.migrateFrom(Prefs.defaultSessionsRoot(this))
+            val (n, err) = if (targetPath != null) st.migrateTo(targetPath)
+            else st.migrateFrom(Prefs.defaultSessionsRoot(this))
             runOnUiThread {
                 val msg = buildString {
                     append("已搬 ").append(n).append(" 项")
@@ -514,7 +627,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** 「迁移已有记录」按钮：把默认目录里的老记录搬进当前（自定义）目录 */
     private fun migrateDialog() {
         val custom = Prefs.sessionsRootCustom(this)
         if (custom.isBlank()) {
@@ -534,7 +646,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("恢复默认目录？")
-            .setMessage("只会把「之后录的」写回默认位置，已有的记录仍留在当前目录里，不会丢。")
+            .setMessage("只会把「之后录的」写回默认位置，已有记录仍留在当前目录里，不会丢。")
             .setPositiveButton("恢复默认") { _, _ ->
                 Prefs.setSessionsRootCustom(this, "")
                 Toast.makeText(this, "已恢复默认目录", Toast.LENGTH_SHORT).show()
@@ -544,14 +656,96 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    // ================= 权限 / 模型 =================
+    // ================= 模型与通道 =================
+
+    private fun bindModel() {
+        tvModelStatus = findViewById(R.id.tvModelStatus)
+        tvPerm = findViewById(R.id.tvPerm)
+        tvNetStatus = findViewById(R.id.tvNetStatus)
+        tvPcAddr = findViewById(R.id.tvPcAddr)
+        swLlm = findViewById(R.id.swLlm)
+        rgNet = findViewById(R.id.rgNet)
+    }
+
+    private fun initModel() {
+        swLlm.isChecked = Prefs.llmEnabled(this)
+        swLlm.setOnCheckedChangeListener { _, v -> Prefs.setLlmEnabled(this, v); refreshModelStatus() }
+
+        findViewById<Button>(R.id.btnScan).setOnClickListener { scanModels() }
+        findViewById<Button>(R.id.btnSaf).setOnClickListener {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 200)
+        }
+        findViewById<Button>(R.id.btnCheck).setOnClickListener { checkModel() }
+        findViewById<Button>(R.id.btnPerm).setOnClickListener {
+            if (hasAllFiles()) Toast.makeText(this, "已经授予了", Toast.LENGTH_SHORT).show()
+            else if (android.os.Build.VERSION.SDK_INT >= 30) {
+                try {
+                    startActivity(Intent(
+                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "打不开系统页：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        rgNet.check(when (Prefs.netMode(this)) {
+            1 -> R.id.rbNetLocal
+            2 -> R.id.rbNetPc
+            else -> R.id.rbNetAuto
+        })
+        rgNet.setOnCheckedChangeListener { _, id ->
+            Prefs.setNetMode(this, when (id) {
+                R.id.rbNetLocal -> 1
+                R.id.rbNetPc -> 2
+                else -> 0
+            })
+            refreshNet()
+        }
+        findViewById<Button>(R.id.btnPcIp).setOnClickListener {
+            val input = EditText(this).apply {
+                setText(Prefs.pcIp(this@SettingsActivity)); setSelection(text.length)
+            }
+            AlertDialog.Builder(this)
+                .setTitle("PC 的局域网 IP")
+                .setMessage("在 PC 上跑 start-server.bat 或 ipconfig 查 IPv4，形如 192.168.3.15")
+                .setView(input)
+                .setPositiveButton("保存") { _, _ ->
+                    val ip = input.text.toString().trim()
+                    if (ip.isNotEmpty()) { Prefs.setPcIp(this@SettingsActivity, ip); refreshNet() }
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+
+        findViewById<Button>(R.id.btnSelf).setOnClickListener {
+            startActivity(Intent(this, SelfCheckActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnCapture).setOnClickListener {
+            startActivity(Intent(this, CaptureVerifyActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnErr).setOnClickListener {
+            startActivity(Intent(this, ErrorsActivity::class.java))
+        }
+        refreshNet()
+    }
+
+    private fun refreshNet() {
+        if (!::tvNetStatus.isInitialized) return
+        val ip = Prefs.pcIp(this)
+        val mode = Prefs.netMode(this)
+        tvPcAddr.text = "ASR http://$ip:${Prefs.pcAsrPort(this)}\n判定 http://$ip:${Prefs.pcLlmPort(this)}"
+        tvNetStatus.text = buildString {
+            append("当前选择：").append(NetChannel.name(mode)).append('\n')
+            append(NetChannel.statusText(this@SettingsActivity))
+        }
+    }
 
     private fun refreshPerm() {
         if (!::tvPerm.isInitialized) return
         tvPerm.text = if (hasAllFiles())
             "全盘读取：已授予 ✓（能扫 Download / Documents 里的模型）"
-        else
-            "全盘读取：未授予 —— 扫不到 Download 是这个原因，不是文件没放好。"
+        else "全盘读取：未授予 —— 扫不到 Download 是这个原因，不是文件没放好。"
     }
 
     private fun refreshModelStatus() {
@@ -568,7 +762,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** <models>/llm 下最新的那个 .gguf */
     private fun newestGguf(): File? = try {
         File(Prefs.llmDir(this)).listFiles { f: File -> f.isFile && f.name.endsWith(".gguf", true) }
             ?.maxByOrNull { it.lastModified() }

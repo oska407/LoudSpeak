@@ -23,7 +23,7 @@ import java.io.File
  * - 下方用标注体系（Annotator）重新排版文字，和录音时看到的一致。
  * - 提供「删除（移入回收站）」与「返回」。
  */
-class SessionViewActivity : AppCompatActivity() {
+class SessionViewActivity : LsActivity() {
 
     private lateinit var store: SessionStore
     private var mediaPlayer: MediaPlayer? = null

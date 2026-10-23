@@ -1,482 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 设置页（§6.4 / §11.1 / §11.5）—— 竖版。
-     主界面强制横屏（4 行平铺），设置是一页一列的阅读型界面，竖着更好翻、更好点。
+<!-- 设置页外壳（竖版，R11）：标题栏 + 自建标签条 + 分区容器。
+     标签条没用 TabLayout —— Material 的 Tab 自带主题色，跟「运行时重着色」的皮肤体系打架，
+     自己用 5 个等宽 TextView + 一道下划线反而更好控、也更轻。
      ⚠️ 中文 TextView 一律不关 includeFontPadding（关了上下会削字形）。 -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/s_bg"
-    android:fillViewport="true"
-    android:scrollbars="none">
+    android:orientation="vertical">
 
+    <!-- 顶部标题栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:minHeight="54dp"
+        android:orientation="horizontal"
         android:paddingLeft="16dp"
         android:paddingRight="16dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="32dp">
+        android:paddingTop="10dp">
 
-        <!-- ===== 顶部标题栏 ===== -->
-        <LinearLayout
-            android:layout_width="match_parent"
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:gravity="center"
+            android:tag="keepFont"
+            android:text="←"
+            android:textColor="@color/s_text"
+            android:textSize="22sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:minHeight="56dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnBack"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:gravity="center"
-                android:text="←"
-                android:textColor="@color/s_text"
-                android:textSize="22sp"
-                android:background="?attr/selectableItemBackgroundBorderless" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:text="设置"
-                android:textColor="@color/s_text"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/tvVersion"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/s_text3"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- ===== 1. 练习反馈 ===== -->
-        <TextView style="@style/SetSection" android:text="练习反馈" />
-
-        <LinearLayout style="@style/SetCard">
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="分贝阈值" />
-                    <TextView style="@style/SetDesc"
-                        android:text="说话声音低于它就变红。只影响颜色，不影响任何判定。" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvDbValue"
-                    style="@style/SetValue"
-                    android:text="30" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seekDb"
-                style="@style/SetSeek" />
-
-            <View style="@style/SetDivider" />
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="句末停顿" />
-                    <TextView style="@style/SetDesc"
-                        android:text="停顿超过这么久就断一句。越小切得越碎，讲题停顿多可以调大。" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvVadValue"
-                    style="@style/SetValue"
-                    android:text="800ms" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seekVad"
-                style="@style/SetSeek" />
-
-            <View style="@style/SetDivider" />
-
-            <TextView
-                style="@style/SetTitle"
-                android:layout_marginTop="14dp"
-                android:text="红晕提醒" />
-
-            <TextView
-                style="@style/SetDesc"
-                android:paddingTop="2dp"
-                android:text="说到「这个/那个」时屏幕边缘泛一下红，像缺血那样呼吸三次。只画在边缘，不挡画面、不拦触摸。" />
-
-            <RadioGroup
-                android:id="@+id/rgGlow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <RadioButton
-                    android:id="@+id/rbGlow0"
-                    style="@style/SetRadio"
-                    android:text="泛红提醒（默认）" />
-
-                <RadioButton
-                    android:id="@+id/rbGlow1"
-                    style="@style/SetRadio"
-                    android:text="只在卡片里计数，不泛红" />
-
-                <RadioButton
-                    android:id="@+id/rbGlow2"
-                    style="@style/SetRadio"
-                    android:text="完全安静（计数也不显示）" />
-            </RadioGroup>
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="红晕最短间隔" />
-                    <TextView style="@style/SetDesc" android:text="连续说话时两次泛红之间的最小间隔。" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvGlowValue"
-                    style="@style/SetValue"
-                    android:text="3s" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seekGlow"
-                style="@style/SetSeek" />
-        </LinearLayout>
-
-        <!-- ===== 2. 识别标注 ===== -->
-        <TextView style="@style/SetSection" android:text="识别标注" />
-
-        <LinearLayout style="@style/SetCard">
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="开启标注" />
-                    <TextView style="@style/SetDesc"
-                        android:text="自动给识别文字上色加符号，不用提示词。关掉就是纯文字。" />
-                </LinearLayout>
-
-                <Switch
-                    android:id="@+id/swAnnot"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <View style="@style/SetDivider" />
-
-            <LinearLayout style="@style/SetRow">
-                <TextView
-                    style="@style/SetTitle"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="代词（红字+下划线）" />
-
-                <Switch
-                    android:id="@+id/swPron"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/SetRow">
-                <TextView
-                    style="@style/SetTitle"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="口头禅（灰字+删除线）" />
-
-                <Switch
-                    android:id="@+id/swFiller"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/SetRow">
-                <TextView
-                    style="@style/SetTitle"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="模糊词（暗金+下划线）" />
-
-                <Switch
-                    android:id="@+id/swMuzzy"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/SetRow">
-                <TextView
-                    style="@style/SetTitle"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="句式问题（⚠ 橙色标签）" />
-
-                <Switch
-                    android:id="@+id/swIssue"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnLegend"
-                style="@style/SetBtnAccent"
-                android:text="看看标注图例（每种颜色是什么意思）" />
-        </LinearLayout>
-
-        <!-- ===== 3. 难度分级 ===== -->
-        <TextView style="@style/SetSection" android:text="难度分级" />
-
-        <LinearLayout style="@style/SetCard">
-
-            <TextView
-                android:id="@+id/tvLevelInfo"
-                style="@style/SetDesc"
-                android:paddingTop="12dp"
-                android:textSize="13sp" />
-
-            <Spinner
-                android:id="@+id/spLevel"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="2dp" />
-
-            <TextView
-                android:id="@+id/tvLevelDetail"
-                style="@style/SetDesc"
-                android:paddingTop="6dp" />
-        </LinearLayout>
-
-        <!-- ===== 4. 模型 ===== -->
-        <TextView style="@style/SetSection" android:text="模型" />
-
-        <LinearLayout style="@style/SetCard">
-
-            <TextView
-                android:id="@+id/tvModelStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingTop="12dp"
-                android:paddingBottom="6dp"
-                android:lineSpacingMultiplier="1.35"
-                android:textColor="@color/s_text"
-                android:textSize="13sp" />
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="本地 Qwen 判定" />
-                    <TextView style="@style/SetDesc"
-                        android:text="可选，默认关。开了只是让评语更细；不开也一定会用规则判完。" />
-                </LinearLayout>
-
-                <Switch
-                    android:id="@+id/swLlm"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnScan"
-                style="@style/SetBtnAccent"
-                android:text="扫描并安装（ASR + Qwen 一起找）" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnSaf"
-                style="@style/SetBtn"
-                android:text="从文件管理器选目录（会搜子目录）" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnCheck"
-                style="@style/SetBtn"
-                android:text="校验 ASR（真加载一次，约 15–30 秒）" />
-
-            <TextView
-                android:id="@+id/tvPerm"
-                style="@style/SetDesc"
-                android:paddingTop="10dp" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnPerm"
-                style="@style/SetBtn"
-                android:text="授予「所有文件访问」权限（扫 Download 用）" />
-        </LinearLayout>
-
-        <!-- ===== 5. 存储 ===== -->
-        <TextView style="@style/SetSection" android:text="存储" />
-
-        <LinearLayout style="@style/SetCard">
-
-            <TextView
-                android:id="@+id/tvStorage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingTop="12dp"
-                android:lineSpacingMultiplier="1.35"
-                android:textColor="@color/s_text"
-                android:textSize="14sp" />
-
-            <TextView
-                android:id="@+id/tvDirs"
-                style="@style/SetDesc"
-                android:paddingTop="8dp" />
-
-            <View style="@style/SetDivider" />
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="存放位置" />
-                    <TextView style="@style/SetDesc"
-                        android:text="改完只影响新会话；老记录留在原处，要搬得点下面的「迁移」。" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnChangeDir"
-                style="@style/SetBtn"
-                android:text="改录制存放目录…" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnMigrate"
-                style="@style/SetBtn"
-                android:text="迁移已有记录到当前目录" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnResetDir"
-                style="@style/SetBtn"
-                android:text="恢复默认目录" />
-
-            <View style="@style/SetDivider" />
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="保留多久后提醒" />
-                    <TextView style="@style/SetDesc" android:text="只是提醒，永远不会自动删。" />
-                </LinearLayout>
-
-                <Spinner
-                    android:id="@+id/spHoldDays"
-                    android:layout_width="110dp"
-                    android:layout_height="44dp" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="占多少空间后提醒" />
-                    <TextView style="@style/SetDesc" android:text="同样只是提醒。" />
-                </LinearLayout>
-
-                <Spinner
-                    android:id="@+id/spHoldGb"
-                    android:layout_width="110dp"
-                    android:layout_height="44dp" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView style="@style/SetTitle" android:text="删除时只删视频、留文字" />
-                    <TextView style="@style/SetDesc"
-                        android:text="视频约 5.3MB/分钟，文字才几十 KB。留着以后还能翻。" />
-                </LinearLayout>
-
-                <Switch
-                    android:id="@+id/swKeepText"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
-
-            <View style="@style/SetDivider" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnCleanup"
-                style="@style/SetBtn"
-                android:text="清理建议（列出最旧的 10 条，自己勾）" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnTrash"
-                style="@style/SetBtn"
-                android:text="回收站（逐条恢复 / 永久删除）" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnEmptyTrash"
-                style="@style/SetBtnDanger"
-                android:text="清空回收站（不可恢复）" />
-        </LinearLayout>
-
-        <!-- ===== 6. 其它 ===== -->
-        <TextView style="@style/SetSection" android:text="其它" />
-
-        <LinearLayout style="@style/SetCard">
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnSelf"
-                style="@style/SetBtn"
-                android:layout_marginTop="12dp"
-                android:text="系统自检（内存 / 存储 / 麦克风）" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnCapture"
-                style="@style/SetBtn"
-                android:text="采集验证（预览 / 录制 / 实测分辨率）" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnErr"
-                style="@style/SetBtn"
-                android:text="错误报告（调试用）" />
-        </LinearLayout>
-
-        <TextView style="@style/SetSection" android:text="关于" />
-
-        <LinearLayout style="@style/SetCard">
-            <TextView
-                android:id="@+id/tvAbout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingTop="12dp"
-                android:paddingBottom="8dp"
-                android:lineSpacingMultiplier="1.4"
-                android:textColor="@color/s_text2"
-                android:textSize="13sp" />
-        </LinearLayout>
+            android:layout_marginStart="6dp"
+            android:text="设置"
+            android:textColor="@color/s_text"
+            android:textSize="21sp"
+            android:textStyle="bold" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/tvVersion"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="keepFont"
+            android:textColor="@color/s_text3"
+            android:textSize="12sp" />
     </LinearLayout>
-</ScrollView>
+
+    <!-- 标签条：5 个等分，选中项下方一道 2dp 强调色 -->
+    <LinearLayout
+        android:id="@+id/tabBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingLeft="12dp"
+        android:paddingRight="12dp"
+        android:paddingBottom="4dp" />
+
+    <FrameLayout
+        android:id="@+id/tabContent"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

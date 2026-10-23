@@ -43,10 +43,12 @@ import com.oska.loudspeak.core.DbMeter
 import com.oska.loudspeak.core.GlowOverlay
 import com.oska.loudspeak.core.LcdDbView
 import com.oska.loudspeak.core.Prefs
+import com.oska.loudspeak.core.Punctuator
 import com.oska.loudspeak.core.Annotator
 import com.oska.loudspeak.core.QwenJudge
 import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
+import com.oska.loudspeak.core.Skin
 import com.oska.loudspeak.core.WaveformView
 import com.oska.loudspeak.core.Ui
 import java.io.File
@@ -57,7 +59,7 @@ import kotlin.math.abs
  * 主界面（§6 四行布局 + §12 交互流程）。
  * 四档共用一条判定链路；区别只在「录不录、保不保存」（§6.1.1）。
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : LsActivity() {
 
     // ---- 自绘控件宿主（XML 里以 view class= 引用，必须提供 (Context, AttributeSet) 构造器） ----
     class LcdHost(ctx: android.content.Context, attrs: android.util.AttributeSet? = null) : View(ctx, attrs) {
@@ -85,6 +87,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var wave: WaveHost
     private lateinit var textArea: WritingTextArea   // 第 3 行：书写式文字区（自动跟随/手拨/阻尼回收）
     private lateinit var glow: GlowHost
+    /** 视频窗口范围的红晕（R11 可选：只视频一圈 / 整界面一圈 / 关闭） */
+    private lateinit var glowVideo: GlowHost
     private lateinit var diagnosisScroll: android.widget.ScrollView
     private lateinit var diagnosisList: LinearLayout
     private lateinit var tvDiagnosisTitle: TextView
@@ -159,6 +163,7 @@ class MainActivity : AppCompatActivity() {
         wave = findViewById(R.id.waveView)
         textArea = findViewById(R.id.textArea)
         glow = findViewById(R.id.glowView)
+        glowVideo = findViewById(R.id.glowVideo)
         diagnosisScroll = findViewById(R.id.diagnosisPanel)
         diagnosisList = findViewById(R.id.diagnosisList)
         tvDiagnosisTitle = findViewById(R.id.tvDiagnosisTitle)
@@ -247,6 +252,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从设置回来：皮肤 / 深色浅色 / 导航栏可能改了。本界面没被重建，得自己重着色一次
+        Skin.applyTo(this, findViewById(android.R.id.content))
+        if (::textArea.isInitialized) textArea.applySkin()   // 文字区自绘，单独刷
         if (state == "idle") {
             mode = Prefs.getMode(this); updateModeBadge()
             // 从「设置」装完模型回来：自动补加载 + 刷新提示
@@ -339,7 +347,7 @@ class MainActivity : AppCompatActivity() {
         sentences.clear()
         textArea.reset()
         wave.wf.reset()
-        glow.glow.clearNow()
+        clearGlow()
 
         // 热降频缓解（§13.2 措施 1）：亮度锁 50%、刷新率锁 60Hz；停止时恢复
         // preferredRefreshRate 是 API 30 才有的字段，低版本设备访问会 NoSuchFieldError
@@ -622,17 +630,44 @@ class MainActivity : AppCompatActivity() {
         )
         RuleEngine.evaluate(listOf(s), l4Enabled = false)   // 实时只做 L1（§8.6 起点只开 L1）
         sentences.add(s)
+        // 语法分句（R11）：补句末标点、把碎片并回上一句；**不改字**，可关
+        Punctuator.optimize(sentences, Prefs.punctMode(this))
         renderAll()
         updateCounters()
 
-        // 红晕（§7.1）：命中代词 + 防抖 + 录制中 + 未静默
-        if (state == "recording" && s.pronouns.isNotEmpty() && Prefs.glowMode(this) == 0) {
+        // 红晕（§7.1）：命中代词 + 防抖 + 录制中 + 范围没关
+        if (state == "recording" && s.pronouns.isNotEmpty() && Prefs.glowScope(this) != 2) {
             val now = System.currentTimeMillis()
             if (now - lastGlowAt >= Prefs.glowDebounceSec(this) * 1000L) {
                 lastGlowAt = now
-                glow.glow.fire()
+                fireGlow()
             }
         }
+    }
+
+    /**
+     * 触发红晕。范围（R11）：
+     *  0 = 只视频窗口四周一圈（默认，右栏文字区不受影响）
+     *  1 = 整个界面四周一圈
+     *  2 = 关闭（调用点已挡掉，这里再兜一次）
+     */
+    private fun fireGlow() {
+        val times = Prefs.glowTimes(this)
+        val strength = Prefs.glowStrength(this)
+        when (Prefs.glowScope(this)) {
+            // ②④ 档没有视频栏（左栏是隐藏的），这时以视频为范围就什么也看不见 → 退回整屏
+            0 -> if (::glowVideo.isInitialized && ::leftPanel.isInitialized &&
+                leftPanel.visibility == View.VISIBLE) glowVideo.glow.fire(times, strength)
+            else glow.glow.fire(times, strength)
+            1 -> glow.glow.fire(times, strength)
+            else -> {}
+        }
+    }
+
+    /** 两层红晕一起消掉（点屏 / 换会话时都要） */
+    private fun clearGlow() {
+        if (::glow.isInitialized) glow.glow.clearNow()
+        if (::glowVideo.isInitialized) glowVideo.glow.clearNow()
     }
 
     private fun renderAll() {
@@ -642,8 +677,9 @@ class MainActivity : AppCompatActivity() {
 
     /** 「整句」卡显示 说得完整的句数 / 总句数，后面那半用小一号灰字 */
     private fun updateCounters() {
-        val ok = sentences.count { !it.uncertain }
-        val total = sentences.size
+        // 分母只数「独立句子」：被语法分句并回上一句的碎片不单独算一句（R11）
+        val ok = sentences.count { it.counted && !it.uncertain }
+        val total = sentences.count { it.counted }
         val sb = SpannableStringBuilder()
         sb.append(ok.toString())
         if (total > 0) {
@@ -687,7 +723,7 @@ class MainActivity : AppCompatActivity() {
         videoRecording = null
         audio = null
         state = "idle"
-        glow.glow.clearNow()
+        clearGlow()
         // 恢复屏幕亮度与刷新率（§13.2）
         window.attributes = window.attributes.apply {
             screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE

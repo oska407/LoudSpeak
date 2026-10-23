@@ -19,7 +19,7 @@ import java.io.FileReader
  * B0 内存自检页：读出本机实测参数，对照设计规格（§1.3 / §13）给出参考值。
  * 仅用于真机验证，不影响任何业务采集逻辑。
  */
-class SelfCheckActivity : AppCompatActivity() {
+class SelfCheckActivity : LsActivity() {
 
     private lateinit var reportContainer: LinearLayout
 

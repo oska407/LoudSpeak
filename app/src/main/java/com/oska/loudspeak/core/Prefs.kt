@@ -38,6 +38,47 @@ object Prefs {
     fun glowDebounceSec(ctx: Context): Int = sp(ctx).getInt("glowDebounceSec", 3)
     fun setGlowDebounceSec(ctx: Context, v: Int) = sp(ctx).edit().putInt("glowDebounceSec", v.coerceIn(1, 10)).apply()
 
+    /** 红晕呼吸次数：触发一次连做几下（1–6，默认 3） */
+    fun glowTimes(ctx: Context): Int = sp(ctx).getInt("glowTimes", 3)
+    fun setGlowTimes(ctx: Context, v: Int) = sp(ctx).edit().putInt("glowTimes", v.coerceIn(1, 6)).apply()
+
+    /** 红晕浓烈度：1 淡 / 2 中 / 3 浓（默认 2） */
+    fun glowStrength(ctx: Context): Int = sp(ctx).getInt("glowStrength", 2)
+    fun setGlowStrength(ctx: Context, v: Int) = sp(ctx).edit().putInt("glowStrength", v.coerceIn(1, 3)).apply()
+
+    /**
+     * 红晕范围：0 = 只视频窗口四周一圈（默认）/ 1 = 整个界面四周一圈 / 2 = 关闭红晕。
+     * 注：「关闭红晕」不影响卡片里的代词计数 —— 计数照常显示，只是不泛红。
+     */
+    fun glowScope(ctx: Context): Int = sp(ctx).getInt("glowScope", 0)
+    fun setGlowScope(ctx: Context, v: Int) = sp(ctx).edit().putInt("glowScope", v.coerceIn(0, 2)).apply()
+
+    // ---- 外观（R11：深色/浅色 + 皮肤 + 导航栏）----
+    /** 色彩模式：0 深色 / 1 浅色 / 2 跟随系统 */
+    fun colorMode(ctx: Context): Int = sp(ctx).getInt("colorMode", 0)
+    fun setColorMode(ctx: Context, v: Int) = sp(ctx).edit().putInt("colorMode", v.coerceIn(0, 2)).apply()
+
+    /** 皮肤：0 经典 / 1 纸张 / 2 终端 / 3 霓虹 */
+    fun skin(ctx: Context): Int = sp(ctx).getInt("skin", 0)
+    fun setSkin(ctx: Context, v: Int) = sp(ctx).edit().putInt("skin", v.coerceIn(0, 3)).apply()
+
+    /** 是否隐藏手机导航栏（默认隐藏，边缘上滑可临时唤出） */
+    fun navHidden(ctx: Context): Boolean = sp(ctx).getBoolean("navHidden", true)
+    fun setNavHidden(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("navHidden", v).apply()
+
+    // ---- 句末断句的语法优化（R11）----
+    /**
+     * 0 = 只用停顿断句（原行为）/ 1 = 停顿 + 规则标点与短句合并 / 2 = 规则 + 本地 Qwen 复核。
+     * 「不改字」是硬约定：只加标点、只把碎片并回上一句，一个字都不替换、不删。
+     */
+    fun punctMode(ctx: Context): Int = sp(ctx).getInt("punctMode", 1)
+    fun setPunctMode(ctx: Context, v: Int) = sp(ctx).edit().putInt("punctMode", v.coerceIn(0, 2)).apply()
+
+    // ---- 网络模型通道（R11 预留）----
+    /** 0 自动（探活成功走 PC）/ 1 仅本地 / 2 仅 PC。当前 App 未申请 INTERNET，见 NetChannel。 */
+    fun netMode(ctx: Context): Int = sp(ctx).getInt("netMode", 0)
+    fun setNetMode(ctx: Context, v: Int) = sp(ctx).edit().putInt("netMode", v.coerceIn(0, 2)).apply()
+
     // ---- 识别标注体系（§R9）：色彩 + 符号，逐项可关 ----
     fun annotEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("annotEnabled", true)
     fun setAnnotEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotEnabled", v).apply()

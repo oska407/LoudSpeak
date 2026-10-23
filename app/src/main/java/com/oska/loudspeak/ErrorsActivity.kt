@@ -14,7 +14,7 @@ import com.oska.loudspeak.core.Ui
 import java.io.File
 
 /** 错误报告页（调试用）：列出 crash/error 报告，点开看详情，可清空。完全离线，只在本机。 */
-class ErrorsActivity : AppCompatActivity() {
+class ErrorsActivity : LsActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val pad = (resources.displayMetrics.density * 10).toInt()

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置 · 外观：深色/浅色、皮肤、导航栏 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="32dp">
+
+        <TextView style="@style/SetSection" android:text="色彩模式" />
+
+        <LinearLayout style="@style/SetCard">
+            <RadioGroup
+                android:id="@+id/rgColor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="6dp">
+
+                <RadioButton
+                    android:id="@+id/rbDark"
+                    style="@style/SetRadio"
+                    android:text="深色（默认）" />
+
+                <RadioButton
+                    android:id="@+id/rbLight"
+                    style="@style/SetRadio"
+                    android:text="浅色" />
+
+                <RadioButton
+                    android:id="@+id/rbAuto"
+                    style="@style/SetRadio"
+                    android:text="跟随系统" />
+            </RadioGroup>
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="界面风格" />
+
+        <LinearLayout style="@style/SetCard">
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:text="换的不只是颜色：字体、圆角、分贝器的形态会一起换。" />
+
+            <RadioGroup
+                android:id="@+id/rgSkin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/rbSkinClassic"
+                    style="@style/SetSkin"
+                    android:text="经典" />
+
+                <RadioButton
+                    android:id="@+id/rbSkinPaper"
+                    style="@style/SetSkin"
+                    android:text="纸张" />
+
+                <RadioButton
+                    android:id="@+id/rbSkinTerminal"
+                    style="@style/SetSkin"
+                    android:text="终端" />
+
+                <RadioButton
+                    android:id="@+id/rbSkinNeon"
+                    style="@style/SetSkin"
+                    android:text="霓虹" />
+            </RadioGroup>
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="系统栏" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="隐藏导航栏" />
+                    <TextView style="@style/SetDesc"
+                        android:text="隐藏后从屏幕底边上滑可临时唤出。显示时底色跟界面一致，不会突然一条黑带。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swNav"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="说明" />
+
+        <LinearLayout style="@style/SetCard">
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:text="皮肤与色彩模式都属于「外观」，只影响这台手机上怎么显示，不影响判定、不影响已录的记录。\n切换后面板会按新皮肤重新上色；退出设置回到主界面时，主界面也会一起换。" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

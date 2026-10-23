@@ -48,6 +48,16 @@
                 android:text="③ 纯显示·带画面"
                 android:textColor="#FF4ADE80"
                 android:textSize="13sp" />
+
+            <!-- 视频窗口范围的红晕（R11）：只在这块四周泛红，右栏文字区一点不受影响。
+                 跟全屏那层一样，只在 dispatchDraw 里画、不挂监听、不拦触摸。 -->
+            <view
+                class="com.oska.loudspeak.MainActivity$GlowHost"
+                android:id="@+id/glowVideo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="false"
+                android:focusable="false" />
         </FrameLayout>
 
         <!-- 分隔线 -->

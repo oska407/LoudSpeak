@@ -104,6 +104,19 @@
         <item name="android:paddingRight">14dp</item>
     </style>
 
+    <!-- 皮肤选项：两行（名字 + 一句话性格），比一行纯名字好选 -->
+    <style name="SetSkin">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/s_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:lineSpacingMultiplier">1.25</item>
+        <item name="android:buttonTint">@color/s_accent</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+
     <style name="SetBtnAccent" parent="SetBtn">
         <item name="android:textColor">@color/s_accent</item>
     </style>

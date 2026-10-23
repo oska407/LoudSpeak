@@ -28,7 +28,7 @@ import java.io.File
  *  - 每行：星标（标记重点，便于回看）+ 查看 + 长按看详情（meta 全字段）
  *  - 多选批量删除（走软删除，进回收站可恢复）
  */
-class HistoryActivity : AppCompatActivity() {
+class HistoryActivity : LsActivity() {
 
     private lateinit var store: SessionStore
     private lateinit var adapter: BaseAdapter

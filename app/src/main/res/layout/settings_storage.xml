@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置 · 存储：目录、占用、保留策略、清理与回收站 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="32dp">
+
+        <TextView style="@style/SetSection" android:text="占用" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                android:id="@+id/tvStorage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:lineSpacingMultiplier="1.35"
+                android:textColor="@color/s_text"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/tvDirs"
+                style="@style/SetDesc"
+                android:paddingTop="8dp" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="存放位置" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:text="改完只影响新会话；老记录留在原处，要搬得点下面的「迁移」。" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnChangeDir"
+                style="@style/SetBtn"
+                android:text="改录制存放目录…" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnMigrate"
+                style="@style/SetBtn"
+                android:text="迁移已有记录到当前目录" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnResetDir"
+                style="@style/SetBtn"
+                android:text="恢复默认目录" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="保留与删除" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="保留多久后提醒" />
+                    <TextView style="@style/SetDesc" android:text="只是提醒，永远不会自动删。" />
+                </LinearLayout>
+
+                <Spinner
+                    android:id="@+id/spHoldDays"
+                    android:layout_width="110dp"
+                    android:layout_height="44dp" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="占多少空间后提醒" />
+                    <TextView style="@style/SetDesc" android:text="同样只是提醒。" />
+                </LinearLayout>
+
+                <Spinner
+                    android:id="@+id/spHoldGb"
+                    android:layout_width="110dp"
+                    android:layout_height="44dp" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="删除时只删视频、留文字" />
+                    <TextView style="@style/SetDesc"
+                        android:text="视频约 5.3MB/分钟，文字才几十 KB。留着以后还能翻。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swKeepText"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnCleanup"
+                style="@style/SetBtn"
+                android:text="清理建议（列出最旧的 10 条，自己勾）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnTrash"
+                style="@style/SetBtn"
+                android:text="回收站（逐条恢复 / 永久删除）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnEmptyTrash"
+                style="@style/SetBtnDanger"
+                android:text="清空回收站（不可恢复）" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

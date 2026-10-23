@@ -113,6 +113,8 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 .put("flags", JSONArray().apply { s.flags.forEach { put(it) } })
                 .put("judge", s.judge ?: JSONObject.NULL)
                 .put("selfMarked", s.selfMarked)
+                .put("punct", s.punct)          // 补的标点（不改字）
+                .put("mergePrev", s.mergePrev)  // 并回上一句的碎片
                 .put("take", s.take))
         }
         File(dir, "transcript.json").writeText(arr.toString(2))
@@ -199,6 +201,8 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 }
                 val fl = o.optJSONArray("flags")
                 if (fl != null) for (j in 0 until fl.length()) s.flags.add(fl.getString(j))
+                s.punct = o.optString("punct", "")
+                s.mergePrev = o.optBoolean("mergePrev", false)
                 val mz = o.optJSONArray("muzzy")
                 if (mz != null) for (j in 0 until mz.length()) {
                     val p = mz.getJSONObject(j)

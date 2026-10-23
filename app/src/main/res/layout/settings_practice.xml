@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置 · 练习：声音、断句、红晕、难度分级 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="32dp">
+
+        <TextView style="@style/SetSection" android:text="声音与断句" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="分贝阈值" />
+                    <TextView style="@style/SetDesc"
+                        android:text="说话声音低于它就变红。只影响颜色，不影响任何判定。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvDbValue"
+                    style="@style/SetValue"
+                    android:text="30" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekDb"
+                style="@style/SetSeek" />
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="句末停顿" />
+                    <TextView style="@style/SetDesc"
+                        android:text="停顿超过这么久就断一句。越小切得越碎，讲题停顿多可以调大。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvVadValue"
+                    style="@style/SetValue"
+                    android:text="800ms" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekVad"
+                style="@style/SetSeek" />
+
+            <View style="@style/SetDivider" />
+
+            <TextView
+                style="@style/SetTitle"
+                android:layout_marginTop="14dp"
+                android:text="断句看语法" />
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="2dp"
+                android:text="除了停顿，再按语法补句末标点、把「我觉得」「这个」这种半截碎片并回上一句。不改一个字。" />
+
+            <RadioGroup
+                android:id="@+id/rgPunct"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/rbPunctOff"
+                    style="@style/SetRadio"
+                    android:text="只按停顿（原样）" />
+
+                <RadioButton
+                    android:id="@+id/rbPunctRule"
+                    style="@style/SetRadio"
+                    android:text="规则补标点 + 碎片合并（推荐）" />
+
+                <RadioButton
+                    android:id="@+id/rbPunctQwen"
+                    style="@style/SetRadio"
+                    android:text="规则 + 本地 Qwen 复核标点" />
+            </RadioGroup>
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="2dp"
+                android:text="Qwen 那档要有本地模型才会真的跑；没有时自动用规则，结果一样不会改字。" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="红晕提醒" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:text="说到「这个/那个」时边缘泛红，像缺血那样呼吸几下。只画在边缘，不挡画面、不拦触摸。" />
+
+            <RadioGroup
+                android:id="@+id/rgGlowScope"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/rbScopeVideo"
+                    style="@style/SetRadio"
+                    android:text="只在视频窗口四周一圈（默认）" />
+
+                <RadioButton
+                    android:id="@+id/rbScopeFull"
+                    style="@style/SetRadio"
+                    android:text="整个界面四周一圈" />
+
+                <RadioButton
+                    android:id="@+id/rbScopeOff"
+                    style="@style/SetRadio"
+                    android:text="关闭红晕（卡片里的计数照常显示）" />
+            </RadioGroup>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="泛红次数" />
+                    <TextView style="@style/SetDesc" android:text="触发一次连呼吸几下。太少没感觉，太多会烦。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvGlowTimes"
+                    style="@style/SetValue"
+                    android:text="3 次" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekGlowTimes"
+                style="@style/SetSeek" />
+
+            <TextView
+                style="@style/SetTitle"
+                android:layout_marginTop="12dp"
+                android:text="浓烈度" />
+
+            <RadioGroup
+                android:id="@+id/rgGlowStrength"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbStr1"
+                    style="@style/SetRadio"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="淡" />
+
+                <RadioButton
+                    android:id="@+id/rbStr2"
+                    style="@style/SetRadio"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="中" />
+
+                <RadioButton
+                    android:id="@+id/rbStr3"
+                    style="@style/SetRadio"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="浓" />
+            </RadioGroup>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="最短间隔" />
+                    <TextView style="@style/SetDesc" android:text="连续说话时两次泛红之间至少隔多久。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvGlowValue"
+                    style="@style/SetValue"
+                    android:text="3s" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekGlow"
+                style="@style/SetSeek" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="难度分级" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                android:id="@+id/tvLevelInfo"
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:textColor="@color/s_text"
+                android:textSize="13sp" />
+
+            <Spinner
+                android:id="@+id/spLevel"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:id="@+id/tvLevelDetail"
+                style="@style/SetDesc"
+                android:paddingTop="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

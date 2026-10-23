@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置 · 标注：色彩 + 符号的标注体系，逐项可关 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="32dp">
+
+        <TextView style="@style/SetSection" android:text="识别标注" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="开启标注" />
+                    <TextView style="@style/SetDesc"
+                        android:text="自动给识别文字上色加符号，不用提示词。关掉就是纯文字。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swAnnot"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <TextView
+                    style="@style/SetTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="代词（红字 + 下划线）" />
+
+                <Switch
+                    android:id="@+id/swPron"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/SetRow">
+                <TextView
+                    style="@style/SetTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="口头禅（灰字 + 删除线）" />
+
+                <Switch
+                    android:id="@+id/swFiller"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/SetRow">
+                <TextView
+                    style="@style/SetTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="模糊词（暗金 + 下划线）" />
+
+                <Switch
+                    android:id="@+id/swMuzzy"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/SetRow">
+                <TextView
+                    style="@style/SetTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="句式问题（⚠ 橙色标签）" />
+
+                <Switch
+                    android:id="@+id/swIssue"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnLegend"
+                style="@style/SetBtnAccent"
+                android:text="看看标注图例（每种颜色是什么意思）" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="标注说明" />
+
+        <LinearLayout style="@style/SetCard">
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:text="四类标注都是「她自己一眼能看出来」的：颜色区分种类，符号区分程度。\n红＋下划线＝代词，要换成名字；灰＋删除线＝口头禅，能省就省；暗金＋下划线＝模糊词（第 9 次会话后才开）；⚠＝句子不完整。\n标注只提示，不给分、不排名。" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

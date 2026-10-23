@@ -108,9 +108,9 @@ class WaveformView(v: View) {
     fun onDraw(c: Canvas) {
         val w = view.width.toFloat(); val h = view.height.toFloat()
         val mid = h / 2f
-        paint.color = 0xFF2A3A46.toInt()
+        paint.color = Skin.current.stroke
         c.drawRect(0f, 0f, w, h, paint)
-        paint.color = 0xFF4ADE80.toInt()
+        paint.color = Skin.current.lcdOn
 
         if (playhead >= 0 && overview.isNotEmpty()) {
             // 回放：全程概览 + 已播放部分提亮 + 游标
@@ -118,10 +118,12 @@ class WaveformView(v: View) {
             val step = w / n
             // 线宽跟着柱距走：格子变密时 4px 宽的线会互相糊成一片实心块
             paint.strokeWidth = (step * 0.55f).coerceIn(1.2f, 4f)
+            paint.color = Skin.current.lcdOn
             for (i in 0 until n) {
                 val a = overview[i]
                 val barH = (a * (h * 0.8f)).coerceAtLeast(3f)
-                paint.color = if (i.toFloat() / n <= playhead) 0xFF4ADE80.toInt() else 0xFF2E4A5A.toInt()
+                paint.color = if (i.toFloat() / n <= playhead) Skin.current.lcdOn
+                else (Skin.current.stroke and 0x00FFFFFF) or 0xCC000000.toInt()
                 val x = i * step
                 c.drawLine(x, mid - barH / 2, x, mid + barH / 2, paint)
             }

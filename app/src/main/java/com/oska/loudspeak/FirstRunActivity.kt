@@ -26,7 +26,7 @@ import com.oska.loudspeak.core.Ui
  * （不打分 / 只有你能删 / 随时能停），必须真的让孩子看到才算数，
  * 混在一堆按钮里在她那儿等于没说。
  */
-class FirstRunActivity : AppCompatActivity() {
+class FirstRunActivity : LsActivity() {
 
     private var step = 1
     private lateinit var host: LinearLayout

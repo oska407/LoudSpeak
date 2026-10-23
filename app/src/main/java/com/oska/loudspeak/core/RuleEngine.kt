@@ -69,8 +69,17 @@ object RuleEngine {
         val flags: MutableList<String> = mutableListOf(),               // 缺主体/半截句/要素缺失
         var selfMarked: Boolean = false,
         val take: Int = 1,
-        var judge: String? = null    // 追问语（规则生成；LLM 模式下由模型生成，当前恒 null→用规则追问）
+        var judge: String? = null,   // 追问语（规则生成；LLM 模式下由模型生成，当前恒 null→用规则追问）
+        /** 句末标点（Punctuator 按语法补的，**不是 ASR 给的**） */
+        var punct: String = "",
+        /** 这一句其实是上一句的碎片，只是被停顿切开了 —— 显示时接上去，不单独算一句 */
+        var mergePrev: Boolean = false
     ) {
+        /** 显示用文本：原文 + 补的标点。**原文一个字都不改**（硬约定） */
+        val displayText: String get() = text + punct
+        /** 统计口径：并回上一句的碎片不算独立一句 */
+        val counted: Boolean get() = !mergePrev
+
         /** 一句内 ? 过半 → 整句退出判定（§6.3.2） */
         val judgeable: Boolean get() = !uncertain
         val isProblem: Boolean get() = judgeable && !selfMarked && (pronouns.isNotEmpty() || flags.isNotEmpty())

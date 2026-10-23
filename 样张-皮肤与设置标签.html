@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大声说 · 皮肤 & 设置标签 样张</title>
+<style>
+  :root{ --ink:#0b0e11; }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0a0c0f;color:#e9eff4;padding:36px 20px 60px;
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  }
+  h1{font-size:19px;margin:0 0 6px;font-weight:700}
+  .sub{color:#7c8894;font-size:13px;margin:0 0 26px;line-height:1.7;max-width:900px}
+  .row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .item{width:268px}
+  .cap{margin-top:10px;font-size:12px;color:#8695a1;line-height:1.6}
+  .cap b{color:#e9eff4;font-size:13px;display:block;margin-bottom:2px}
+
+  /* ---- 手机框 ---- */
+  .phone{
+    width:268px;height:150px;border-radius:14px;overflow:hidden;position:relative;
+    border:1px solid rgba(255,255,255,.08);display:flex;
+  }
+  .left{width:26%;background:#000;position:relative;display:grid;place-items:center}
+  .face{width:38px;height:52px;border-radius:50% 50% 44% 44%;background:rgba(255,255,255,.13)}
+  .badge{position:absolute;top:4px;right:4px;font-size:7px;padding:2px 5px;border-radius:4px;
+         background:rgba(0,0,0,.6);color:#4ADE80}
+  .right{flex:1;padding:8px;display:flex;flex-direction:column;gap:6px}
+
+  /* 数据卡 */
+  .cards{display:flex;gap:6px}
+  .card{flex:1;border-radius:8px;padding:5px 7px;min-height:38px;
+        display:flex;flex-direction:column;justify-content:center}
+  .cl{font-size:8px;opacity:.75}
+  .cv{font-size:15px;font-weight:700;line-height:1.1}
+  .cv small{font-size:9px;font-weight:400;opacity:.6}
+
+  /* 分贝器 */
+  .lcd{height:44px;border-radius:8px;padding:5px 8px;position:relative;overflow:hidden;
+       display:flex;align-items:flex-end;justify-content:space-between}
+  .lcdnum{font-size:26px;line-height:1;font-weight:700;letter-spacing:-1px}
+  .lcdside{font-size:7px;text-align:right;line-height:1.5;opacity:.9;padding-bottom:4px}
+  .bars{position:absolute;left:8px;right:8px;bottom:5px;height:6px;display:flex;gap:2px}
+  .bars i{flex:1;border-radius:1px;display:block;height:6px}
+  .line-seg{position:absolute;left:8px;right:8px;bottom:6px;height:2px}
+  .leds{position:absolute;left:8px;right:8px;bottom:5px;height:5px;display:flex;gap:1.5px}
+  .leds i{flex:1;display:block;height:5px}
+  .pencil{position:absolute;left:8px;right:8px;bottom:13px;height:1px;opacity:.35}
+
+  /* 文字区 */
+  .text{flex:1;border-radius:8px;padding:6px 8px;font-size:9px;line-height:1.85;overflow:hidden}
+  .pron{text-decoration:underline;text-underline-offset:2px}
+  .fill{text-decoration:line-through;opacity:.65}
+  .punct{opacity:.55}
+  .warn{font-size:8px}
+
+  /* 按钮 */
+  .btns{display:flex;gap:4px}
+  .btn{flex:1;height:16px;border-radius:5px;font-size:7.5px;display:grid;place-items:center;font-weight:600}
+
+  /* 标签条展示 */
+  .tabsdemo{margin-top:34px;max-width:880px}
+  .tabbar{display:flex;border-bottom:1px solid rgba(255,255,255,.07);padding:0 4px}
+  .tab{flex:1;text-align:center;padding:9px 0 7px;font-size:13px;color:#7c8894}
+  .tab.on{color:#4FA3FF;font-weight:600}
+  .tab.on span{display:block;width:26px;height:2px;background:#4FA3FF;margin:7px auto 0;border-radius:2px}
+  .tab span{display:block;width:26px;height:2px;margin:7px auto 0;background:transparent}
+
+  /* 浅色小样 */
+  .lightgrid{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}
+  .lg{width:200px;border-radius:10px;padding:12px;font-size:12px}
+  .lg b{display:block;font-size:13px;margin-bottom:6px}
+</style>
+</head>
+<body>
+
+<h1>四套皮肤 + 设置分标签</h1>
+<p class="sub">换皮肤不是只换一层颜色：字体、圆角、分贝器的形态会一起换。下面每块都是主界面（横版）的等比例示意 —— 同一个界面，四种性格。</p>
+
+<div class="row">
+
+  <!-- 经典 -->
+  <div class="item">
+    <div class="phone" style="background:#101418">
+      <div class="left"><div class="face"></div><div class="badge">③ 带画面</div></div>
+      <div class="right" style="font-family:sans-serif">
+        <div class="cards" style="color:#E9EFF4">
+          <div class="card" style="background:#1C242B"><div class="cl" style="color:#9AA7B0">时长</div><div class="cv">03:12</div></div>
+          <div class="card" style="background:#1C242B"><div class="cl" style="color:#9AA7B0">整句</div><div class="cv">14<small style="color:#9AA7B0">/20</small></div></div>
+          <div class="card" style="background:#1C242B"><div class="cl" style="color:#9AA7B0">代词</div><div class="cv" style="color:#4ADE80">7</div></div>
+        </div>
+        <div class="lcd" style="background:#0E1A12">
+          <div class="lcdnum" style="color:#4ADE80;font-family:monospace">42</div>
+          <div class="lcdside" style="color:#4ADE80">dB<br>正常</div>
+          <div class="bars">
+            <i style="background:#4ADE80"></i><i style="background:#4ADE80"></i><i style="background:#4ADE80"></i>
+            <i style="background:#4ADE80"></i><i style="background:#4ADE80"></i><i style="background:#4ADE80"></i>
+            <i style="background:#1E2C24"></i><i style="background:#1E2C24"></i><i style="background:#1E2C24"></i>
+            <i style="background:#1E2C24"></i><i style="background:#1E2C24"></i><i style="background:#1E2C24"></i>
+          </div>
+        </div>
+        <div class="text" style="background:#1C242B;color:#E9EFF4">
+          我觉得<span class="pron" style="color:#FF5252">这个</span>数先移项，<span class="fill" style="color:#7C8B96">嗯</span>然后两边同时除以 2<span class="punct">，</span>所以 x 等于 3<span class="punct">。</span>
+        </div>
+        <div class="btns">
+          <div class="btn" style="background:#4ADE80;color:#08170B">停止</div>
+          <div class="btn" style="background:#4ADE80;color:#08170B">录音</div>
+          <div class="btn" style="background:#4ADE80;color:#08170B">历史</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>经典</b>深灰蓝 + 绿 · 无衬线 · 24 段条形分贝器。原来那套，最保险。</div>
+  </div>
+
+  <!-- 纸张 -->
+  <div class="item">
+    <div class="phone" style="background:#191612">
+      <div class="left"><div class="face"></div><div class="badge" style="color:#E8834A">③ 带画面</div></div>
+      <div class="right" style="font-family:Georgia,"Songti SC",serif">
+        <div class="cards" style="color:#F3EADA">
+          <div class="card" style="background:#221E18;border-radius:4px"><div class="cl" style="color:#B5A88F">时长</div><div class="cv">03:12</div></div>
+          <div class="card" style="background:#221E18;border-radius:4px"><div class="cl" style="color:#B5A88F">整句</div><div class="cv">14<small style="color:#B5A88F">/20</small></div></div>
+          <div class="card" style="background:#221E18;border-radius:4px"><div class="cl" style="color:#B5A88F">代词</div><div class="cv" style="color:#E8834A">7</div></div>
+        </div>
+        <div class="lcd" style="background:#211B14;border-radius:4px;align-items:center">
+          <div class="lcdnum" style="color:#E8C07A;font-size:30px">42</div>
+          <div class="lcdside" style="color:#E8C07A">dB<br>正常</div>
+          <div class="pencil" style="background:#3A3226"></div>
+          <div class="line-seg"><i style="display:block;height:2px;width:62%;background:#E8C07A"></i></div>
+        </div>
+        <div class="text" style="background:#221E18;color:#F3EADA;border-radius:4px">
+          我觉得<span class="pron" style="color:#FF5252">这个</span>数先移项，<span class="fill" style="color:#8A7F6C">嗯</span>然后两边同时除以 2<span class="punct">，</span>所以 x 等于 3<span class="punct">。</span>
+        </div>
+        <div class="btns">
+          <div class="btn" style="background:#E8834A;color:#1A0F06;border-radius:3px">停止</div>
+          <div class="btn" style="background:#E8834A;color:#1A0F06;border-radius:3px">录音</div>
+          <div class="btn" style="background:#E8834A;color:#1A0F06;border-radius:3px">历史</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>纸张</b>米白纸感 · <b style="display:inline;font-size:12px">衬线字</b> · 方角 · 分贝器只剩大数字与一条细刻度。</div>
+  </div>
+
+  <!-- 终端 -->
+  <div class="item">
+    <div class="phone" style="background:#050807">
+      <div class="left"><div class="face"></div><div class="badge" style="color:#35D07F">③ 带画面</div></div>
+      <div class="right" style="font-family:ui-monospace,Consolas,monospace">
+        <div class="cards" style="color:#BDF5CE">
+          <div class="card" style="background:#0B1210;border-radius:3px"><div class="cl" style="color:#5E8B6E">时长</div><div class="cv">03:12</div></div>
+          <div class="card" style="background:#0B1210;border-radius:3px"><div class="cl" style="color:#5E8B6E">整句</div><div class="cv">14<small style="color:#5E8B6E">/20</small></div></div>
+          <div class="card" style="background:#0B1210;border-radius:3px"><div class="cl" style="color:#5E8B6E">代词</div><div class="cv" style="color:#35D07F">7</div></div>
+        </div>
+        <div class="lcd" style="background:#03110A;border-radius:3px">
+          <div class="lcdnum" style="color:#35D07F;font-size:24px">42</div>
+          <div class="lcdside" style="color:#35D07F">dB<br>正常</div>
+          <div class="leds">
+            <i style="background:#35D07F"></i><i style="background:#35D07F"></i><i style="background:#35D07F"></i><i style="background:#35D07F"></i>
+            <i style="background:#35D07F"></i><i style="background:#35D07F"></i><i style="background:#35D07F"></i><i style="background:#35D07F"></i>
+            <i style="background:#35D07F"></i><i style="background:#0F2419"></i><i style="background:#0F2419"></i><i style="background:#0F2419"></i>
+            <i style="background:#0F2419"></i><i style="background:#0F2419"></i><i style="background:#0F2419"></i><i style="background:#0F2419"></i>
+            <i style="background:#0F2419"></i><i style="background:#0F2419"></i><i style="background:#0F2419"></i><i style="background:#0F2419"></i>
+          </div>
+        </div>
+        <div class="text" style="background:#0B1210;color:#BDF5CE;border-radius:3px">
+          我觉得<span class="pron" style="color:#FF6B5E">这个</span>数先移项，<span class="fill" style="color:#3F6152">嗯</span>然后两边同时除以 2<span class="punct">，</span>所以 x 等于 3<span class="punct">。</span>
+        </div>
+        <div class="btns">
+          <div class="btn" style="background:#35D07F;color:#03110A;border-radius:2px">停止</div>
+          <div class="btn" style="background:#35D07F;color:#03110A;border-radius:2px">录音</div>
+          <div class="btn" style="background:#35D07F;color:#03110A;border-radius:2px">历史</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>终端</b>磷光绿 · <b style="display:inline;font-size:12px">等宽字</b> · 40 段细 LED，最像仪器。</div>
+  </div>
+
+  <!-- 霓虹 -->
+  <div class="item">
+    <div class="phone" style="background:#0B0A14">
+      <div class="left"><div class="face"></div><div class="badge" style="color:#22D3EE">③ 带画面</div></div>
+      <div class="right" style="font-family:'PingFang SC',sans-serif-condensed,sans-serif">
+        <div class="cards" style="color:#EDEAFF">
+          <div class="card" style="background:#17142A;border-radius:12px"><div class="cl" style="color:#9C93C4">时长</div><div class="cv">03:12</div></div>
+          <div class="card" style="background:#17142A;border-radius:12px"><div class="cl" style="color:#9C93C4">整句</div><div class="cv">14<small style="color:#9C93C4">/20</small></div></div>
+          <div class="card" style="background:#17142A;border-radius:12px"><div class="cl" style="color:#9C93C4">代词</div><div class="cv" style="color:#22D3EE">7</div></div>
+        </div>
+        <div class="lcd" style="background:#120A1F;border-radius:12px">
+          <div class="lcdnum" style="color:#22D3EE;font-size:24px">42</div>
+          <div class="lcdside" style="color:#22D3EE">dB<br>正常</div>
+          <div class="bars" style="height:6px">
+            <i style="background:linear-gradient(90deg,#22D3EE,rgba(34,211,238,.3));border-radius:3px"></i>
+            <i style="background:linear-gradient(90deg,#22D3EE,rgba(34,211,238,.3));border-radius:3px"></i>
+            <i style="background:linear-gradient(90deg,#22D3EE,rgba(34,211,238,.3));border-radius:3px"></i>
+            <i style="background:linear-gradient(90deg,#22D3EE,rgba(34,211,238,.3));border-radius:3px"></i>
+            <i style="background:#241A3C;border-radius:3px"></i><i style="background:#241A3C;border-radius:3px"></i>
+            <i style="background:#241A3C;border-radius:3px"></i><i style="background:#241A3C;border-radius:3px"></i>
+          </div>
+        </div>
+        <div class="text" style="background:#17142A;color:#EDEAFF;border-radius:12px">
+          我觉得<span class="pron" style="color:#FB5BA8">这个</span>数先移项，<span class="fill" style="color:#6E6690">嗯</span>然后两边同时除以 2<span class="punct">，</span>所以 x 等于 3<span class="punct">。</span>
+        </div>
+        <div class="btns">
+          <div class="btn" style="background:#22D3EE;color:#04121A;border-radius:8px">停止</div>
+          <div class="btn" style="background:#22D3EE;color:#04121A;border-radius:8px">录音</div>
+          <div class="btn" style="background:#22D3EE;color:#04121A;border-radius:8px">历史</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>霓虹</b>紫黑 + 青 · 大圆角 · 分贝条带发光渐变，代词偏洋红。</div>
+  </div>
+</div>
+
+<!-- 浅色 -->
+<div class="tabsdemo">
+  <h1 style="font-size:16px">浅色模式：每套皮肤都有自己的浅色版</h1>
+  <p class="sub" style="margin-bottom:6px">不是「把深色反相」—— 纸感、终端、霓虹的浅色各自配了底色与强调色，避免出现「白底白箭头」。</p>
+  <div class="lightgrid">
+    <div class="lg" style="background:#F5F7F8;color:#18222A;border:1px solid #DCE3E8">
+      <b style="color:#16A34A">经典 · 浅</b><span style="color:#5C6A75">#F5F7F8 底 / #FFFFFF 卡 / 绿</span>
+    </div>
+    <div class="lg" style="background:#F3ECDF;color:#2A2520;border:1px solid #DCCFB6;font-family:Georgia,serif">
+      <b style="color:#B45309">纸张 · 浅</b><span style="color:#6B6152">#F3ECDF 米纸 / 墨字 / 赭红</span>
+    </div>
+    <div class="lg" style="background:#F0F5F1;color:#0F241A;border:1px solid #CBDCD2;font-family:ui-monospace,monospace">
+      <b style="color:#12824C">终端 · 浅</b><span style="color:#4C6B58">#F0F5F1 / 墨绿 / 等宽</span>
+    </div>
+    <div class="lg" style="background:#F5F2FF;color:#1B1730;border:1px solid #DDD4F7">
+      <b style="color:#7C3AED">霓虹 · 浅</b><span style="color:#6B6392">#F5F2FF / 白卡 / 紫</span>
+    </div>
+  </div>
+</div>
+
+<!-- 标签 -->
+<div class="tabsdemo">
+  <h1 style="font-size:16px">设置分成五个标签</h1>
+  <p class="sub" style="margin-bottom:6px">原来一页滑到底，想试一下换皮肤要翻二十行。现在一进设置就先点分类。</p>
+  <div class="tabbar">
+    <div class="tab on">练习<span></span></div>
+    <div class="tab">标注<span></span></div>
+    <div class="tab">外观<span></span></div>
+    <div class="tab">存储<span></span></div>
+    <div class="tab">模型<span></span></div>
+  </div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:16px;font-size:12.5px;color:#8695a1;line-height:1.9">
+    <div style="flex:1;min-width:150px"><b style="color:#e9eff4;display:block;margin-bottom:4px">练习</b>分贝阈值 · 句末停顿 · <span style="color:#4FA3FF">断句看语法</span> · 红晕（范围 / 次数 / 浓烈度 / 间隔） · 难度分级</div>
+    <div style="flex:1;min-width:150px"><b style="color:#e9eff4;display:block;margin-bottom:4px">标注</b>主开关 + 代词 / 口头禅 / 模糊词 / 句式问题 · 标注图例</div>
+    <div style="flex:1;min-width:150px"><b style="color:#e9eff4;display:block;margin-bottom:4px">外观</b>深色 / 浅色 / 跟随系统 · <span style="color:#4FA3FF">四套皮肤</span> · 隐藏导航栏</div>
+    <div style="flex:1;min-width:150px"><b style="color:#e9eff4;display:block;margin-bottom:4px">存储</b>占用 · 存放位置（改 / 迁移 / 恢复默认） · 保留提醒 · 只删视频留文字 · 清理与回收站</div>
+    <div style="flex:1;min-width:150px"><b style="color:#e9eff4;display:block;margin-bottom:4px">模型</b>ASR / Qwen 状态与安装 · <span style="color:#4FA3FF">网络通道（自动 / 仅本地 / 仅 PC）</span> · 自检入口</div>
+  </div>
+</div>
+
+</body>
+</html>

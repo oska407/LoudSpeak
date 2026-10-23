@@ -82,6 +82,23 @@ class WritingTextArea @JvmOverloads constructor(
             setPadding(padL, padT, padR, padB)
         }
         addView(text, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        applySkin()
+    }
+
+    /**
+     * 换皮肤后重新上色（R11）。
+     * 文字区是自绘控件，走不到 Skin.recolor 的「认色」逻辑，得自己取一次调色板：
+     * 否则浅色皮肤下会出现「白字压白纸」，字全看不见。
+     */
+    fun applySkin() {
+        val p = com.oska.loudspeak.core.Skin.current
+        text.setTextColor(p.text)
+        text.typeface = try {
+            android.graphics.Typeface.create(p.font, android.graphics.Typeface.NORMAL)
+        } catch (_: Exception) { text.typeface }
+        // 横格线用 text3 的半透明版本：深色皮肤上是暗线，浅色皮肤上自动变成淡灰线
+        text.ruleColor = (p.text3 and 0x00FFFFFF) or 0x50000000
+        text.invalidate()
     }
 
     override fun onAttachedToWindow() {

@@ -9,7 +9,7 @@ import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.Ui
 
 /** 四档选择（§6.4 模式键）：每档一句人话说明；开始前选定，会中不可切 */
-class ModeSelectActivity : AppCompatActivity() {
+class ModeSelectActivity : LsActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val pad = (resources.displayMetrics.density * 12).toInt()

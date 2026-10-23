@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置 · 模型与通道：本地 ASR/Qwen + 网络模型通道（预留） -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="32dp">
+
+        <TextView style="@style/SetSection" android:text="本地模型" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                android:id="@+id/tvModelStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingMultiplier="1.35"
+                android:paddingTop="12dp"
+                android:paddingBottom="6dp"
+                android:textColor="@color/s_text"
+                android:textSize="13sp" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="本地 Qwen 判定" />
+                    <TextView style="@style/SetDesc"
+                        android:text="可选，默认关。开了只是让评语更细；不开也一定会用规则判完。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swLlm"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnScan"
+                style="@style/SetBtnAccent"
+                android:text="扫描并安装（ASR + Qwen 一起找）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSaf"
+                style="@style/SetBtn"
+                android:text="从文件管理器选目录（会搜子目录）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnCheck"
+                style="@style/SetBtn"
+                android:text="校验 ASR（真加载一次，约 15–30 秒）" />
+
+            <TextView
+                android:id="@+id/tvPerm"
+                style="@style/SetDesc"
+                android:paddingTop="10dp" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnPerm"
+                style="@style/SetBtn"
+                android:text="授予「所有文件访问」权限（扫 Download 用）" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="网络模型通道（预留）" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                android:id="@+id/tvNetStatus"
+                style="@style/SetDesc"
+                android:paddingTop="12dp" />
+
+            <RadioGroup
+                android:id="@+id/rgNet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/rbNetAuto"
+                    style="@style/SetRadio"
+                    android:text="自动：PC 通就用 PC，不通就用本地" />
+
+                <RadioButton
+                    android:id="@+id/rbNetLocal"
+                    style="@style/SetRadio"
+                    android:text="只用本地（完全离线）" />
+
+                <RadioButton
+                    android:id="@+id/rbNetPc"
+                    style="@style/SetRadio"
+                    android:text="只用 PC（PC 没开就报错，不偷偷换）" />
+            </RadioGroup>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="PC 地址" />
+                    <TextView
+                        android:id="@+id/tvPcAddr"
+                        style="@style/SetDesc" />
+                </LinearLayout>
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnPcIp"
+                    style="@style/SetBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_marginTop="0dp"
+                    android:text="改 IP" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingBottom="8dp"
+                android:text="⚠ 目前 App 不申请网络权限（为了守住「完全离线、数据不出手机」这句承诺），所以这一页先只做选择与地址配置；等 PC 批次接入时才启用真正的探活与切换。" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="其它" />
+
+        <LinearLayout style="@style/SetCard">
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSelf"
+                style="@style/SetBtn"
+                android:layout_marginTop="12dp"
+                android:text="系统自检（内存 / 存储 / 麦克风）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnCapture"
+                style="@style/SetBtn"
+                android:text="采集验证（预览 / 录制 / 实测分辨率）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnErr"
+                style="@style/SetBtn"
+                android:text="错误报告（调试用）" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

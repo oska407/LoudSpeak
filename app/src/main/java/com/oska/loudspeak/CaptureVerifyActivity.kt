@@ -40,7 +40,7 @@ import java.util.concurrent.Executors
  * 若实测为全幅 1280×720，则说明本机前端不支持 544×720 直出，
  * 需到 B2 做编码级中间竖条裁切（设计已预见此路径）。
  */
-class CaptureVerifyActivity : AppCompatActivity() {
+class CaptureVerifyActivity : LsActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var tvResult: TextView

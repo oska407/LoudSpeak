@@ -14,7 +14,7 @@ import com.oska.loudspeak.core.Ui
 import java.io.File
 
 /** 回收站（§11.4）：软删除的会话在这里，保留 7 天；可逐条恢复，清空需确认 */
-class TrashActivity : AppCompatActivity() {
+class TrashActivity : LsActivity() {
 
     private lateinit var store: SessionStore
     private lateinit var host: LinearLayout

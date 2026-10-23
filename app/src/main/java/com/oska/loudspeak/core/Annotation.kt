@@ -26,6 +26,7 @@ object Annotator {
     val C_ISSUE   = 0xFFFFB74D.toInt()   // 句式问题：琥珀橙
     val C_MUZZY   = 0xFFE8A33D.toInt()   // 模糊词（L2）：暗金（比问题橙弱一档，不抢眼）
     val C_SELF    = 0xFF6E7B84.toInt()   // 自评：中性灰
+    val C_PUNCT   = 0xFF7A8792.toInt()   // 补上的句末标点：淡灰，别人一眼看不出是我们加的
 
     /** 生成标注图例（设置页「标注图例」按钮用） */
     fun legend(): String = buildString {
@@ -54,17 +55,20 @@ object Annotator {
         if (!prefs.enabled) {
             // 主开关关：纯文字（仍保留 ? 表示不清，因为那是识别结果而非我们标上去的）
             var lastChapter = 0
-            for (s in sentences) {
+            sentences.forEachIndexed { i, s ->
                 while (lastChapter < chapters && lastChapter * 60000 < s.tEndMs) {
                     lastChapter++; appendSep(sb, lastChapter)
                 }
-                sb.append(if (s.uncertain) "?" else s.text).append(" ")
+                sb.append(if (s.uncertain) "?" else s.displayText)
+                // 并回上一句的碎片直接接着写，不留空格
+                val nextMerged = sentences.getOrNull(i + 1)?.mergePrev == true
+                if (!nextMerged) sb.append(" ")
             }
             if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
             return sb
         }
         var lastChapter = 0
-        for (s in sentences) {
+        sentences.forEachIndexed { i, s ->
             while (lastChapter < chapters && lastChapter * 60000 < s.tEndMs) {
                 lastChapter++; appendSep(sb, lastChapter)
             }
@@ -103,6 +107,12 @@ object Annotator {
                     idx = m.pos + m.word.length
                 }
                 if (idx < s.text.length) sb.append(s.text.substring(idx))
+                // 补上的句末标点（Punctuator），淡一点，别跟正文抢注意力
+                if (s.punct.isNotEmpty()) {
+                    val ps = sb.length
+                    sb.append(s.punct)
+                    sb.setSpan(ForegroundColorSpan(C_PUNCT), ps, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
             }
             if (s.selfMarked) {
                 val ps = sb.length
@@ -114,7 +124,8 @@ object Annotator {
                 sb.append(" ⚠${s.flags.joinToString("·")}")
                 sb.setSpan(ForegroundColorSpan(C_ISSUE), ps, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            sb.append(" ")
+            val nextMerged = sentences.getOrNull(i + 1)?.mergePrev == true
+            if (!nextMerged) sb.append(" ")
         }
         if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
         return sb
