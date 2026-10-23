@@ -16,3 +16,6 @@ __pycache__/
 /docs/
 /pc/
 /prototype/
+
+# 构建产物：APK 只分发，不进仓库
+*.apk

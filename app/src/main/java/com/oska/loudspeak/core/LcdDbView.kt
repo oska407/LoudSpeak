@@ -62,27 +62,31 @@ class LcdDbView(private val v: View) {
             else -> Typeface.MONOSPACE
         }
 
-        // ---- 数字：顶天立地 ----
+        // ---- 数字：放**右侧**、顶天立地（R12 用户要求）----
+        // 原来数字在左、dB/正常 挤在右上角，红圈那块反而最显眼；现在把数字挪到右侧，
+        // 让它贴着右边缘撑满整个高度，左侧留给单位与判定。
         val txt = "%.0f".format(displayL)
-        val rightCol = if (style == Skin.DB_MINIMAL) 0.70f else 0.60f
-        val maxW = (w * rightCol).coerceAtLeast(1f)
-        var numSize = h * (if (style == Skin.DB_MINIMAL) 0.70f else 0.82f)
+        textPaint.textAlign = Paint.Align.RIGHT
+        val maxW = (w * 0.62f).coerceAtLeast(1f)
+        var numSize = h * (if (style == Skin.DB_MINIMAL) 0.78f else 0.92f)
         textPaint.textSize = numSize
         val tw = textPaint.measureText(txt)
         if (tw > maxW) {
             numSize *= maxW / tw
             textPaint.textSize = numSize
         }
-        val baseline = if (style == Skin.DB_MINIMAL) h * 0.72f else h * 0.80f
-        c.drawText(txt, pad, baseline, textPaint)
+        // 基线压到 0.80h：数字上沿贴住卡片顶、下沿刚好落在分段条上方（条从 0.84h 起画）
+        val baseline = h * (if (style == Skin.DB_MINIMAL) 0.80f else 0.80f)
+        c.drawText(txt, w - pad, baseline, textPaint)
 
-        // ---- 右上：单位 + 判定 ----
+        // ---- 左侧：单位 + 判定（跟着阈值一起变色）----
         labelPaint.typeface = textPaint.typeface
-        labelPaint.textSize = h * 0.15f
+        labelPaint.textAlign = Paint.Align.LEFT
+        labelPaint.textSize = h * 0.17f
         labelPaint.color = color
-        c.drawText("dB", w - pad, h * 0.30f, labelPaint)
-        labelPaint.textSize = h * 0.14f
-        c.drawText(if (ok) "正常" else "偏小", w - pad, h * 0.50f, labelPaint)
+        c.drawText("dB", pad, h * 0.30f, labelPaint)
+        labelPaint.textSize = h * 0.16f
+        c.drawText(if (ok) "正常" else "偏小", pad, h * 0.56f, labelPaint)
 
         val availW = w - pad * 2
         when (style) {
