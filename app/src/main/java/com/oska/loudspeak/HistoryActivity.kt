@@ -212,9 +212,14 @@ class HistoryActivity : LsActivity() {
                 if (keepText) "会移入回收站（保留 ${Prefs.TRASH_KEEP_DAYS} 天，可恢复）；当前设置为只删音视频、保留转写文字。"
                 else "会移入回收站（保留 ${Prefs.TRASH_KEEP_DAYS} 天，可在回收站恢复）。")
             .setPositiveButton("删除") { _, _ ->
-                var ok = 0
-                selected.toList().forEach { if (store.softDelete(it, keepText) == null) ok++ }
-                Toast.makeText(this, "已移入回收站 $ok 条", Toast.LENGTH_SHORT).show()
+                var ok = 0; var firstErr: String? = null
+                selected.toList().forEach {
+                    val e = store.softDelete(it, keepText)
+                    if (e == null) ok++ else if (firstErr == null) firstErr = e
+                }
+                val msg = if (ok == selected.size) "已移入回收站 $ok 条"
+                          else "已移入回收站 $ok 条" + (if (firstErr != null) "（其余失败：$firstErr）" else "")
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
                 selected.clear(); load()
             }
             .setNegativeButton("取消", null)

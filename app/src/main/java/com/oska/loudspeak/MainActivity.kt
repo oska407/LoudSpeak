@@ -46,6 +46,8 @@ import com.oska.loudspeak.core.ModelScanner
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.Punctuator
 import com.oska.loudspeak.core.Annotator
+import com.oska.loudspeak.core.AsrResult
+import com.oska.loudspeak.core.Fluency
 import com.oska.loudspeak.core.QwenJudge
 import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
@@ -193,7 +195,7 @@ class MainActivity : LsActivity() {
         // 平移/裁剪不生效（会漏出窗口外的东西），TextureView 没有这个毛病。
         previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         previewBox.bias = Prefs.cropBias(this, curRotation())
-        if (!Prefs.hasCropBias(this, curRotation())) autoFrame()   // 这个朝向还没标定过
+        autoFrame(force = true)   // 总是校准一次：没标定过就标；脸出窗就强制重标
         setupPreviewDrag()
 
         // 长按停止 2 秒 = 情绪退出（§12.5）
@@ -441,6 +443,8 @@ class MainActivity : LsActivity() {
         promptedHot = false
         take = 1
         prevTakePronouns = 0
+        lastJudgeOverall = null
+        lastFluency = null
         sentences.clear()
         textArea.reset()
         wave.wf.reset()
@@ -506,9 +510,9 @@ class MainActivity : LsActivity() {
             },
             onSentence = { pcm, t0, t1 ->
                 asrExecutor.execute {
-                    val text = asr.transcribe(pcm)
-                    if (text == null) CrashReporter.report("error", "ASR 单句转写失败/为空 t0=$t0")
-                    main.post { onAsrResult(text, t0, t1) }
+                    val res = asr.transcribe(pcm)
+                    if (res == null) CrashReporter.report("error", "ASR 单句转写失败/为空 t0=$t0")
+                    main.post { onAsrResult(res, t0, t1) }
                 }
             },
             // ③④ 档不落盘 → 不攒全程 PCM（10 分钟省 ~38MB，见 AudioEngine 注释）
@@ -596,8 +600,10 @@ class MainActivity : LsActivity() {
         Ui.hideStatusBar(this)
         val rot = curRotation()
         previewBox.bias = Prefs.cropBias(this, rot)
-        if (!Prefs.hasCropBias(this, rot) && previewView.visibility == View.VISIBLE) {
-            previewView.postDelayed({ autoFrame() }, 900L)   // 等 Preview 把画面回转过来
+        if (previewView.visibility == View.VISIBLE) {
+            // 掉头后**总是**重新自动标定（不再只在「没标定过」时）：
+            // 旧朝向的标定值对掉头后的镜头位置毫无意义，歪了就要能自愈。
+            previewView.postDelayed({ autoFrame(force = true) }, 300L)   // 等 Preview 把画面回转过来
         }
         try {
             // 正在录的时候改 targetRotation 可能抛异常 —— 吞掉，最多这一段 mp4 朝向不对，
@@ -611,9 +617,16 @@ class MainActivity : LsActivity() {
     /**
      * 自动标定取景偏移：抓一帧，按肤色质心找脸的位置，把取景窗口平移过去让脸居中。
      * 连做 3 次（每次间隔递增）收敛一下，仍判不出来就保持不动 —— 不猜。
+     *
+     * 2026-10-23 修「横屏掉头（前置摄像头从左边变到右边）后人物跑出画面左外」：
+     * 原来只在「这个朝向从没标定过」时才自动标定；只要存过一次（哪怕是在转屏瞬间
+     * 抓到了过渡帧、标歪了），就再也不改 —— 歪值被永久记住。
+     * 现在：
+     *  1. 转朝向 / 相机绑定后**总是**跑自动标定（没手拖过的朝向直接重标，歪值自愈）；
+     *  2. 就算手拖过（manual=true），只要检测到**脸完全跑出了可视窗**，
+     *     说明现在的偏移肯定不是用户拖的意图，强制重标一次并清掉 manual（提示用户）。
      */
-    private fun autoFrame(attempt: Int = 0) {
-        if (Prefs.cropBiasManual(this, curRotation())) return
+    private fun autoFrame(attempt: Int = 0, force: Boolean = false) {
         main.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
             val bmp = try { previewView.bitmap } catch (e: Exception) { null }
@@ -622,14 +635,25 @@ class MainActivity : LsActivity() {
                 val tw = previewBox.childWidth().toFloat()
                 val cw = previewBox.width.toFloat()
                 val sl = previewBox.slack().toFloat()
-                // 让质心落在窗口正中
-                val x0 = (fx * tw - cw / 2f).coerceIn(0f, sl)
-                val b = (1f - 2f * x0 / sl).coerceIn(-1f, 1f)
-                previewBox.bias = b
-                Prefs.setCropBias(this, curRotation(), b)
+                val facePx = fx * tw
+                // 当前可视窗在宽画幅里的区间（translationX 为负，可视段 = [-tx, -tx+cw]）
+                val tx = -(sl / 2f) * (1f - previewBox.bias)
+                val faceVisible = facePx > -tx + cw * 0.12f && facePx < -tx + cw * 0.88f
+                val manual = Prefs.cropBiasManual(this, curRotation())
+                if (!manual || (force && !faceVisible)) {
+                    if (manual && !faceVisible && attempt == 0) {
+                        Prefs.setCropBias(this, curRotation(), 0f, manual = false)
+                        Toast.makeText(this, "人脸跑到画面外了，已重新自动取景", Toast.LENGTH_SHORT).show()
+                    }
+                    // 让质心落在窗口正中
+                    val x0 = (facePx - cw / 2f).coerceIn(0f, sl)
+                    val b = (1f - 2f * x0 / sl).coerceIn(-1f, 1f)
+                    previewBox.bias = b
+                    Prefs.setCropBias(this, curRotation(), b)
+                }
             }
-            if (attempt < 2) autoFrame(attempt + 1)
-        }, 900L + attempt * 500L)
+            if (attempt < 2) autoFrame(attempt + 1, force)
+        }, 1100L + attempt * 600L)
     }
 
     private fun bindCamera(record: Boolean) {
@@ -641,7 +665,7 @@ class MainActivity : LsActivity() {
                 provider.unbindAll()
                 bindOnce(provider, record)
                 if (record) startVideoSegment()
-                autoFrame()      // 相机起来后自动把脸摆到中间
+                autoFrame(force = true)      // 相机起来后自动把脸摆到中间（脸出窗则强制重标）
             } catch (e: Exception) {
                 CrashReporter.report("error", "相机绑定失败 mode=$mode", e)
                 Toast.makeText(this, "相机启动失败：${e.message}", Toast.LENGTH_SHORT).show()
@@ -719,13 +743,17 @@ class MainActivity : LsActivity() {
 
     // ================= ASR 结果 → 显示（§12.2 步 3–4） =================
 
-    private fun onAsrResult(text: String?, t0: Long, t1: Long) {
+    private fun onAsrResult(res: AsrResult?, t0: Long, t1: Long) {
+        val text = res?.text
         val s = RuleEngine.Sentence(
             index = sentences.size, tStartMs = t0, tEndMs = t1,
             text = text ?: "?", uncertain = text == null,
-            take = take
+            take = take,
+            // 字级时间戳 → 会话绝对毫秒（R12 流畅度用；识别失败时为空数组，报告里跳过）
+            absMs = res?.absMs(t0) ?: LongArray(0),
+            absWords = res?.absWords() ?: emptyArray()
         )
-        RuleEngine.evaluate(listOf(s), l4Enabled = false)   // 实时只做 L1（§8.6 起点只开 L1）
+        RuleEngine.evaluate(listOf(s), l4Enabled = false, pronounList = Prefs.pronounList(this))   // 实时只做 L1（§8.6 起点只开 L1）
         sentences.add(s)
         // 语法分句（R11）：补句末标点、把碎片并回上一句；**不改字**，可关
         Punctuator.optimize(sentences, Prefs.punctMode(this))
@@ -769,7 +797,7 @@ class MainActivity : LsActivity() {
 
     private fun renderAll() {
         // 标注体系（§R9）：色彩 + 符号，全部走 Annotator，开关来自设置
-        textArea.setContent(Annotator.build(sentences, chaptersDrawn, Prefs.annotationPrefs(this)))
+        textArea.setContent(Annotator.build(sentences, chaptersDrawn, Prefs.annotationPrefs(this), lastFluency))
     }
 
     /** 「整句」卡显示 说得完整的句数 / 总句数，后面那半用小一号灰字 */
@@ -865,7 +893,8 @@ class MainActivity : LsActivity() {
         store.writeMeta(dir, mode, sessionStartedAt, System.currentTimeMillis(), elapsedMs, take,
             sentences.sumOf { it.pronouns.size }, complete, incomplete, selfMarked, exitKind,
             modelsNote = if (asr.available) "纯规则模式" else asr.status,
-            cropBias = previewBox.bias)   // 回放按「录的时候」的取景显示
+            cropBias = previewBox.bias,     // 回放按「录的时候」的取景显示
+            fluency = lastFluency)
         store.indexSession(SessionStore.Record(dir.name, sessionStartedAt, elapsedMs,
             sentences.sumOf { it.pronouns.size }, complete, incomplete, selfMarked, exitKind,
             dir.absolutePath))
@@ -876,23 +905,29 @@ class MainActivity : LsActivity() {
     /** 最近一次判定的总评语（诊断标题区展示用，§R9） */
     private var lastJudgeOverall: String? = null
 
+    /** 最近一次的「说得顺不顺」报告（R12）；会话结束才算，实时不打扰 */
+    private var lastFluency: Fluency.Report? = null
+
     private fun runJudgmentAndDiagnosis(elapsedMs: Long) {
         val count = Prefs.incSessionCount(this)   // ③④ 档同样计数（§12.0）
         // 分级：自动按「第 N 次会话」递进，设置页可手动锁定（§8.6）
         val levels = RuleEngine.levels(count, Prefs.levelOverride(this))
         asrExecutor.execute {
-            RuleEngine.evaluate(sentences, levels, Prefs.muzzyEnabled(this))
-            // 离线自动判定（§R9）：规则后端默认工作；开了本地 Qwen 且 GGUF 就位则尝试升级，失败回退规则
-            val res = QwenJudge.judge(
-                sentences,
-                useLlm = Prefs.llmEnabled(this),
-                ggufPath = Prefs.newestLlm(this)?.absolutePath
-            )
+            RuleEngine.evaluate(sentences, levels, Prefs.muzzyEnabled(this), Prefs.pronounList(this))
+            // 离线自动判定（§R9）：规则后端默认工作；开了 PC 桥则交给 PC 上的大模型，失败回退规则
+            val res = QwenJudge.judge(this, sentences)
             lastJudgeOverall = res.overall
             for (s in sentences) {
                 res.perSentence[s.index]?.let { if (it.isNotEmpty()) s.judge = it }
             }
             main.post {
+                // 流畅度报告（R12）：**事后**才算，并且必须在 Punctuator 合并完碎片之后 ——
+                // 按逻辑句算，被并回上一句的那次停顿才不会被漏掉。
+                lastFluency = if (Prefs.fluencyEnabled(this))
+                    Fluency.analyze(sentences, Prefs.fluencyGapMs(this), Prefs.fluencyTopN(this))
+                else null
+                renderAll()          // 报告接在识别文字最后
+
                 if (sessionDir != null) saveSession(elapsedMs, exitKind = "normal")
                 val hasProblem = sentences.any { it.isProblem }
                 if (hasProblem && sessionDir != null) startReplay(auto = true)
@@ -1046,6 +1081,7 @@ class MainActivity : LsActivity() {
         diagnosisScroll.visibility = View.GONE
         prevTakePronouns = sentences.sumOf { it.pronouns.size }
         sentences.clear()
+        lastFluency = null
         textArea.reset()
         wave.wf.reset()
         videoSegIndex = 0
@@ -1066,8 +1102,8 @@ class MainActivity : LsActivity() {
             },
             onSentence = { pcm, t0, t1 ->
                 asrExecutor.execute {
-                    val text = asr.transcribe(pcm)
-                    main.post { onAsrResult(text, t0, t1) }
+                    val res = asr.transcribe(pcm)
+                    main.post { onAsrResult(res, t0, t1) }
                 }
             },
             keepPcm = (mode == Prefs.MODE_FULL || mode == Prefs.MODE_AUDIO)

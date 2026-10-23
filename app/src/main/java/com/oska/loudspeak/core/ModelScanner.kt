@@ -9,9 +9,8 @@ import java.util.Locale
 /**
  * 模型扫描 / 安装（§5.4）：把「用户从哪儿下载都行」的模型收进 App 私有目录。
  *
- * 两类模型，一套扫描：
- *  - ASR（SenseVoice）：同目录有 `tokens.txt` + 任意 `.onnx` → 一个候选
- *  - LLM（Qwen）：任意 `.gguf` → 一个候选
+ * 只管一类模型：ASR（SenseVoice）—— 同目录有 `tokens.txt` + 任意 `.onnx` → 一个候选。
+ * （2026-10-24：原先还会把 `.gguf` 当 LLM 候选扫进来，随「手机本地 Qwen」整条路线废弃而移除。）
  *
  * 早先版本只认死文件名 `model.int8.onnx` 且只扫一层，所以「明明放着却扫不到」。
  * 现在按扩展名 + 关键字打分挑最像的那个，递归 6 层、上限 3000 个目录。
@@ -22,16 +21,13 @@ import java.util.Locale
  */
 object ModelScanner {
 
-    enum class Kind { ASR, LLM }
+    enum class Kind { ASR }
 
     class Found(val kind: Kind, val model: File, val tokens: File?, val where: String) {
         val sizeMb: Long get() = model.length() / 1_000_000
         fun label(): String {
-            val kindName = if (kind == Kind.ASR) "语音识别" else "Qwen"
-            val tok = if (kind == Kind.ASR) {
-                if (tokens?.isFile == true) " + tokens.txt" else " ⚠缺 tokens.txt"
-            } else ""
-            return "$kindName：$where/${model.name}（${sizeMb}MB$tok）"
+            val tok = if (tokens?.isFile == true) " + tokens.txt" else " ⚠缺 tokens.txt"
+            return "语音识别：$where/${model.name}（${sizeMb}MB$tok）"
         }
     }
 
@@ -65,13 +61,6 @@ object ModelScanner {
                         found.add(Found(Kind.ASR, onnx, tokens, where(dir)))
                     }
                 }
-                // --- LLM：任意 .gguf ---
-                val ggufs = try {
-                    dir.listFiles { f: File -> f.isFile && f.name.lowercase(Locale.US).endsWith(".gguf") }
-                } catch (_: Exception) { null }
-                ggufs?.forEach { g ->
-                    if (seen.add(g.absolutePath)) found.add(Found(Kind.LLM, g, null, where(dir)))
-                }
             }
         }
         return found
@@ -93,7 +82,6 @@ object ModelScanner {
         val p = dir.canonicalPath.replace('\\', '/')
         when {
             p.contains("/files/models/asr") -> "已安装"
-            p.contains("/files/models/llm") -> "已安装"
             p.endsWith("/files") -> "App 目录"
             else -> dir.name.ifBlank { p.substringAfterLast('/') }
         }
@@ -124,18 +112,8 @@ object ModelScanner {
         dstModel.isFile && dstTokens.isFile
     } catch (_: Exception) { false }
 
-    /** LLM → <models>/llm/<原文件名>（Qwen3-0.6B-Q4_K_M.gguf 之类） */
-    fun installLlm(gguf: File, modelsDir: String): Boolean = try {
-        val dstDir = File(modelsDir, "llm").apply { mkdirs() }
-        val dst = File(dstDir, gguf.name)
-        if (!same(gguf, dst)) gguf.copyTo(dst, overwrite = true)
-        dst.isFile
-    } catch (_: Exception) { false }
-
-    fun install(f: Found, modelsDir: String): Boolean = when (f.kind) {
-        Kind.ASR -> installAsr(f.model, f.tokens, modelsDir)
-        Kind.LLM -> installLlm(f.model, modelsDir)
-    }
+    fun install(f: Found, modelsDir: String): Boolean =
+        installAsr(f.model, f.tokens, modelsDir)
 
     private fun same(a: File, b: File): Boolean = try {
         a.canonicalPath == b.canonicalPath
@@ -147,7 +125,6 @@ object ModelScanner {
      * 从系统文件选择器选中的若干文件里挑出模型装上：
      *  - `tokens.txt` → <models>/asr/tokens.txt
      *  - 任意 `.onnx` → <models>/asr/model.int8.onnx（多个时按名字挑最像 SenseVoice 主模型的）
-     *  - 任意 `.gguf` → <models>/llm/<原文件名>
      *
      * 返回一句能直接显示给用户的结果说明（不抛异常）。
      */
@@ -156,7 +133,6 @@ object ModelScanner {
         var onnxBest: Pair<String, Uri>? = null
         var onnxBestScore = -1
         var tokensUri: Uri? = null
-        val ggufs = ArrayList<Pair<String, Uri>>()
         for (u in uris) {
             val name = queryName(ctx, u) ?: continue
             val lower = name.lowercase(Locale.US)
@@ -166,7 +142,6 @@ object ModelScanner {
                     val sc = score(name)
                     if (sc > onnxBestScore) { onnxBestScore = sc; onnxBest = name to u }
                 }
-                lower.endsWith(".gguf") -> ggufs.add(name to u)
             }
         }
 
@@ -176,11 +151,6 @@ object ModelScanner {
             val okModel = copyUri(ctx, onnxBest.second, File(dstDir, "model.int8.onnx"))
             val okTokens = copyUri(ctx, tokensUri, File(dstDir, "tokens.txt"))
             asrOk = okModel && okTokens
-        }
-        var llmCount = 0
-        if (ggufs.isNotEmpty()) {
-            val dstDir = File(modelsDir, "llm").apply { mkdirs() }
-            for ((name, u) in ggufs) if (copyUri(ctx, u, File(dstDir, name))) llmCount++
         }
 
         return buildString {
@@ -194,7 +164,6 @@ object ModelScanner {
                     else -> "✗ 拷贝失败"
                 }
             )
-            append(" · Qwen ").append(if (llmCount > 0) "✓ $llmCount 个" else "未选到")
         }
     }
 

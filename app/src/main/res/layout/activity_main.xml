@@ -66,7 +66,7 @@
             android:layout_height="match_parent"
             android:background="#FF22303A" />
 
-        <!-- 右栏：四行 142/128/306/144 -->
+        <!-- 右栏：四行 152/128/306/134 -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -74,11 +74,12 @@
             android:orientation="vertical"
             android:padding="6dp">
 
-            <!-- 第 1 行 数据区 -->
+            <!-- 第 1 行 数据区。⚠️ 行高权重 152（原 142）：真机上卡片底部数字仍被裁掉一点，
+                 2026-10-23 从按钮行(144→134)匀了 8 份过来，配合 DataCard padding 6→3dp -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="142"
+                android:layout_weight="152"
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
@@ -136,12 +137,12 @@
                 android:overScrollMode="never"
                 android:scrollbarStyle="outsideOverlay" />
 
-            <!-- 第 4 行 七键两组：停止/暂停/录音/播放 + 历史/设置/模式
+            <!-- 第 4 行 七键两组：停止/暂停/录音/播放 + 列表/设置/模式
                  七键等分（layout_weight=1，见 @style/Btn）：任何屏幕宽度都不会被挤出屏 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="144"
+                android:layout_weight="134"
                 android:layout_marginTop="4dp"
                 android:baselineAligned="false"
                 android:gravity="center_vertical"
@@ -157,7 +158,7 @@
                     android:layout_width="3dp"
                     android:layout_height="1dp" />
 
-                <Button android:id="@+id/btnHistory" style="@style/Btn" android:text="历史" />
+                <Button android:id="@+id/btnHistory" style="@style/Btn" android:text="列表" />
                 <Button android:id="@+id/btnSettings" style="@style/Btn" android:text="设置" />
                 <Button android:id="@+id/btnMode" style="@style/Btn" android:text="模式" />
             </LinearLayout>

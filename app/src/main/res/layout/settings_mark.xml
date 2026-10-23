@@ -54,7 +54,7 @@
                     style="@style/SetTitle"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:text="口头禅（灰字 + 删除线）" />
+                    android:text="口头禅（灰字 + 下划线）" />
 
                 <Switch
                     android:id="@+id/swFiller"
@@ -85,6 +85,13 @@
                     style="@style/SetSwitch" />
             </LinearLayout>
 
+            <View style="@style/SetDivider" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnEditPronouns"
+                style="@style/SetBtnAccent"
+                android:text="编辑代词词表" />
+
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnLegend"
                 style="@style/SetBtnAccent"
@@ -98,7 +105,7 @@
                 style="@style/SetDesc"
                 android:paddingTop="12dp"
                 android:paddingBottom="12dp"
-                android:text="四类标注都是「她自己一眼能看出来」的：颜色区分种类，符号区分程度。\n红＋下划线＝代词，要换成名字；灰＋删除线＝口头禅，能省就省；暗金＋下划线＝模糊词（第 9 次会话后才开）；⚠＝句子不完整。\n标注只提示，不给分、不排名。" />
+                android:text="四类标注都是「她自己一眼能看出来」的：颜色区分种类，符号区分程度。\n红＋下划线＝代词，要换成名字；灰＋下划线＝口头禅，能省就省；暗金＋下划线＝模糊词（第 9 次会话后才开）；⚠＝句子不完整。\n标注只提示，不给分、不排名。" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

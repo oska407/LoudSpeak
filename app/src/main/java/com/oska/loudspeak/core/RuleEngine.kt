@@ -7,14 +7,38 @@ package com.oska.loudspeak.core
  */
 object RuleEngine {
 
-    /** L1 默认词表（§8.1 / §14.2 D3）：不含 他/她/其 */
-    val PRONOUNS = listOf("这个", "那个", "这些", "那些", "这样", "那样", "它")
+    /** L1 默认词表（§8.1 / §14.2 D3）。可在设置里增删，这里是出厂默认：
+     *  含 这/那/这边/那边 的各形态，且「这个/那个」作为子串会自动覆盖「这个X / 那个X」。 */
+    val PRONOUNS = listOf("这个", "那个", "这些", "那些", "这样", "那样", "这边", "那边", "它")
 
     /** 口头禅/填充词（§R9 标注体系）：纯语气词，与代词不重叠；弱化显示，提示「能省就省」 */
     val FILLERS = listOf("嗯", "啊", "呃", "额", "哦", "唔", "哎", "呀", "诶")
 
     /** L2 模糊词（§8.2 / D3）：默认关闭，第 9 次会话起才开 —— 放了等于没说 */
     val MUZZY = listOf("东西", "玩意儿", "什么的", "有点")
+
+    // ---- L4 主谓宾 / 句子结构词表（§8.4，结构分析用；可调） ----
+    /** 句首的「动词/介词/连接」类：正常应先有主语，直接开头多半缺主体 */
+    val VERB_STARTERS = listOf("等于", "加上", "减去", "乘以", "除以", "移项", "合并", "通分", "约分",
+        "代入", "化简", "展开", "去括号", "解得", "结果是", "答案是", "先", "再", "然后",
+        "所以", "因为", "由于", "因此", "但是", "如果", "接着", "于是", "设", "令", "把", "被")
+    /** 主语线索：出现即「这一带有主体」，可抵消缺主体 */
+    val SUBJECT_HINTS = listOf("x", "y", "2x", "3x", "左边", "右边", "分子", "分母", "方程", "题目",
+        "这道题", "等式", "两边", "式子", "因式", "多项式", "单项式", "结果", "答案", "它",
+        "三角形", "正方形", "图形", "长方形", "角", "边", "数", "我们", "我")
+    /** 句末悬空连接词：话没说完 */
+    val DANGLING_END = listOf("所以", "然后", "就", "再", "因为", "但是", "如果", "而且",
+        "那", "那么", "接着", "于是", "因此")
+    /** 从句引导词：开了头通常要有主句收尾，否则半截 */
+    val SUBORDINATORS = listOf("因为", "由于", "如果", "但是", "虽然", "即使", "要是", "假如")
+    /** 主句收束词：与从句引导词配对 */
+    val MAIN_CLAUSE = listOf("所以", "因此", "于是", "就", "那", "那么", "结果")
+    /** 思路词（解题过程） */
+    val REASONING = listOf("因为", "先", "再", "移项", "通分", "两边", "代入", "化简", "设", "令",
+        "去括号", "展开", "合并", "由于", "第一步", "首先", "接着")
+    /** 结论词（答案/结果） */
+    val CONCLUSION = listOf("所以", "答案是", "结果是", "解得", "因此", "最终", "等于")
+
 
     /**
      * 分级开关（§8.6）。顺序按「她自己能否察觉」排：L1 → L3 → L2 → L4-a → L4-b/c，
@@ -73,7 +97,14 @@ object RuleEngine {
         /** 句末标点（Punctuator 按语法补的，**不是 ASR 给的**） */
         var punct: String = "",
         /** 这一句其实是上一句的碎片，只是被停顿切开了 —— 显示时接上去，不单独算一句 */
-        var mergePrev: Boolean = false
+        var mergePrev: Boolean = false,
+        /**
+         * 每个字在**会话时间轴**上的绝对毫秒（SenseVoice 字级时间戳换算，见 [AsrResult.absMs]）。
+         * 空数组 = 没拿到时间戳（识别失败，或模型不支持），此时流畅度报告里跳过这一句。
+         */
+        var absMs: LongArray = LongArray(0),
+        /** 与 [absMs] 一一对应的字表（已剥壳） */
+        var absWords: Array<String> = emptyArray()
     ) {
         /** 显示用文本：原文 + 补的标点。**原文一个字都不改**（硬约定） */
         val displayText: String get() = text + punct
@@ -94,17 +125,42 @@ object RuleEngine {
             }
     }
 
-    /** 对一句做 L1 匹配。返回命中列表（词, 位置）。 */
-    fun matchPronouns(text: String): List<Pair<String, Int>> {
+    /**
+     * 对一句做 L1 匹配。返回命中列表（词, 位置）。
+     * @param list 代词词表（来自设置，可编辑；默认 PRONOUNS）。
+     *   支持「前缀写法」：条目以 * 结尾（如 "这个*"）表示「这个词开头的整段都标」，
+     *   一直标到空白/标点为止 —— 把「这个三角形」整段提示换成名字。
+     */
+    fun matchPronouns(text: String, list: List<String> = PRONOUNS): List<Pair<String, Int>> {
         val hits = mutableListOf<Pair<String, Int>>()
-        for (p in PRONOUNS) {
-            var i = text.indexOf(p)
+        for (raw in list) {
+            val base = raw.trim().removeSuffix("*").removePrefix("*")
+            if (base.isEmpty()) continue
+            val prefix = raw != base
+            var i = text.indexOf(base)
             while (i >= 0) {
-                hits.add(p to i)
-                i = text.indexOf(p, i + p.length)
+                val end = if (prefix) {
+                    var e = i + base.length
+                    while (e < text.length) {
+                        val c = text[e]
+                        if (c.isWhitespace() || c == '，' || c == '。' || c == '、' ||
+                            c == ',' || c == '.' || c == '；' || c == ';') break
+                        e++
+                    }
+                    e
+                } else i + base.length
+                hits.add(text.substring(i, end) to i)
+                i = text.indexOf(base, end)
             }
         }
-        return hits.sortedBy { it.second }
+        // 去掉互相重叠的命中（按位置排好后，跳过落在已标区间内的）
+        hits.sortBy { it.second }
+        val out = mutableListOf<Pair<String, Int>>()
+        var lastEnd = -1
+        for ((w, p) in hits) {
+            if (p >= lastEnd) { out.add(w to p); lastEnd = p + w.length }
+        }
+        return out
     }
 
     /** 口头禅匹配（§R9 标注体系）。返回命中列表（词, 位置）。 */
@@ -137,12 +193,14 @@ object RuleEngine {
      * 整段判定（§12.3）：逐句 L1 + L2（可选）+ L4 高召回 → 跨句兜底撤销部分「缺主体」。
      * levels：按「第 N 次会话」自动递进或设置页手动锁定（§8.6）。
      */
-    fun evaluate(sentences: List<Sentence>, levels: Levels, muzzyOn: Boolean = true) {
+    fun evaluate(sentences: List<Sentence>, levels: Levels, muzzyOn: Boolean = true,
+                 pronounList: List<String> = PRONOUNS) {
         // L1 + L3（口头禅只做标注，不进问题计数）
         for (s in sentences) {
             if (!s.judgeable || s.selfMarked) continue
             s.pronouns.clear(); s.flags.clear(); s.fillers.clear(); s.muzzy.clear()
-            s.pronouns.addAll(matchPronouns(s.text))
+            // 代词命中用「设置里可编辑的词表」，与标注渲染（Annotator.build）同一套
+            s.pronouns.addAll(matchPronouns(s.text, pronounList))
             s.fillers.addAll(matchFillers(s.text))
         }
         // L2 模糊词
@@ -155,50 +213,53 @@ object RuleEngine {
         }
         if (!levels.l4) return
 
-        // L4-a 缺主体：句首以动词/介词开头且前句无主体（简化词表）
-        val subjectHints = listOf("x", "y", "2x", "3x", "左边", "右边", "分子", "分母", "方程", "题目",
-            "这道题", "等式", "两边", "式子", "因式", "多项式", "单项式", "结果", "答案", "它")
-        val startsWithAction = listOf("等于", "加上", "减去", "乘以", "除以", "移项", "合并", "通分", "约分", "然后", "所以", "因为")
+        // L4-a 缺主体：句首以动词/介词/连接开头，且本句无主体线索 → 疑缺主体
         if (levels.l4a) {
             for (s in sentences) {
                 if (!s.judgeable || s.selfMarked || s.pronouns.isNotEmpty()) continue
-                if (startsWithAction.any { s.text.startsWith(it) }) s.flags.add("缺主体")
+                val t = s.text
+                val startsAction = VERB_STARTERS.any { t.startsWith(it) }
+                val hasSubject = SUBJECT_HINTS.any { t.contains(it) }
+                if (startsAction && !hasSubject) s.flags.add("缺主体")
             }
-            // 跨句兜底（§8.4.2）：前后句已提供明确主体 → 撤销
+            // 跨句兜底（§8.4.2）：前/后句已给主体 → 撤销
             for (i in sentences.indices) {
                 val s = sentences[i]
                 if (!s.flags.contains("缺主体")) continue
                 val prev = sentences.getOrNull(i - 1)?.text ?: ""
                 val next = sentences.getOrNull(i + 1)?.text ?: ""
-                if (subjectHints.any { prev.contains(it) } || subjectHints.any { next.contains(it) }) {
+                if (SUBJECT_HINTS.any { prev.contains(it) } || SUBJECT_HINTS.any { next.contains(it) }) {
                     s.flags.remove("缺主体")
                 }
             }
         }
         if (!levels.l4bc) return
 
-        // L4-b 半截句：<6 字且不含因果词；或以「然后/所以/就/再」结尾
-        for (s in sentences) {
+        // L4-b 半截句：句末悬空连接词，或开了从句引导词却没主句收尾（结构不完整）
+        for (i in sentences.indices) {
+            val s = sentences[i]
             if (!s.judgeable || s.selfMarked || s.pronouns.isNotEmpty() || s.flags.isNotEmpty()) continue
             val t = s.text
-            val causal = listOf("因为", "所以", "由于", "因此")
-            if ((t.length < 6 && causal.none { t.contains(it) }) ||
-                listOf("然后", "所以", "就", "再").any { t.endsWith(it) }) {
-                s.flags.add("半截句")
-            }
+            val endsDangling = DANGLING_END.any { t.endsWith(it) }
+            val startsSub = SUBORDINATORS.any { t.startsWith(it) }
+            val nextMain = sentences.getOrNull(i + 1)?.text?.let { n -> MAIN_CLAUSE.any { w -> n.contains(w) } } ?: false
+            val subNoMain = startsSub && !MAIN_CLAUSE.any { t.contains(it) } && !nextMain
+            if (endsDangling || subNoMain) s.flags.add("半截句")
         }
-        // L4-c 要素缺失（§8.4.1）：整段讲了结论词但全程没思路词 → 全段从宽，仅标注最后一句
-        val idea = listOf("因为", "所以", "先", "再", "移项", "通分", "两边", "代入", "化简")
-        val conclusion = listOf("所以", "答案是", "结果是", "解得")
-        if (sentences.isNotEmpty() && sentences.none { idea.any { w -> it.text.contains(w) } } &&
-            sentences.any { conclusion.any { w -> it.text.contains(w) } }) {
-            sentences.last().flags.add("要素缺失")
+
+        // L4-c 要素缺失（§8.4.1）：整段「有结论无思路」或「有思路无结论」→ 标注最后一句
+        val hasReasoning = sentences.any { it.judgeable && REASONING.any { w -> it.text.contains(w) } }
+        val hasConclusion = sentences.any { it.judgeable && CONCLUSION.any { w -> it.text.contains(w) } }
+        if (sentences.isNotEmpty() && (hasConclusion != hasReasoning)) {
+            // 只标最后一句、且不覆盖已判的更具体标记
+            val last = sentences.last()
+            if (last.judgeable && last.flags.none { it == "半截句" || it == "缺主体" }) last.flags.add("要素缺失")
         }
     }
 
     /** 兼容旧签名：只区分「L4 开不开」 */
-    fun evaluate(sentences: List<Sentence>, l4Enabled: Boolean) =
-        evaluate(sentences, Levels(if (l4Enabled) 5 else 1, l2 = false, l4a = l4Enabled, l4bc = l4Enabled))
+    fun evaluate(sentences: List<Sentence>, l4Enabled: Boolean, pronounList: List<String> = PRONOUNS) =
+        evaluate(sentences, Levels(if (l4Enabled) 5 else 1, l2 = false, l4a = l4Enabled, l4bc = l4Enabled), pronounList = pronounList)
 
     /** 分级开关（§8.6）：第 13 次会话起开 L4-a；仅此一级，宁漏勿错 */
     fun l4Enabled(sessionCount: Int): Boolean = sessionCount >= 13

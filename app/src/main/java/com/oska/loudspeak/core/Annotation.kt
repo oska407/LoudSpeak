@@ -3,7 +3,6 @@ package com.oska.loudspeak.core
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
-import android.text.style.StrikethroughSpan
 import android.text.style.UnderlineSpan
 
 /**
@@ -11,7 +10,9 @@ import android.text.style.UnderlineSpan
  *
  * 四类标注（与 RuleEngine 的输出一一对应）：
  *  - 代词（这个/那个/它…）：红色字 + 红色实线下划线。下划线即「符号」，提示「这里要换成具体名字」。
- *  - 口头禅（嗯/啊/呃…）：灰蓝字 + 删除线。删除线即「符号」，提示「能省就省」。
+ *  - 口头禅（嗯/啊/呃…）：灰蓝字 + 下划线。下划线即「符号」，提示「能省就省」。
+ *    （2026-10-23 用户要求：横划线不要穿过文字，统一移到文字下方 —— 删除线改下划线，
+ *    靠颜色（灰 vs 红）区分口头禅与代词。）
  *  - 识别不清：灰色「?」字。「?」本身就是符号（来自 ASR 的 uncertain，不是我们强加的标注）。
  *  - 句式问题（缺主体/半截句/要素缺失）：橙色「⚠ 标签」。⚠ 即符号。
  *
@@ -28,12 +29,18 @@ object Annotator {
     val C_SELF    = 0xFF6E7B84.toInt()   // 自评：中性灰
     val C_PUNCT   = 0xFF7A8792.toInt()   // 补上的句末标点：淡灰，别人一眼看不出是我们加的
 
+    // 「说得顺不顺」（R12）单独一套颜色：用青蓝，避开代词红 / 句式橙，别跟现有标注打架
+    val C_FLUENCY_HEAD = 0xFF546E7A.toInt()   // 小标题：跟章节分隔线一个调子
+    val C_FLUENCY      = 0xFF9FB3BF.toInt()   // 正文：淡
+    val C_FLUENCY_NUM  = 0xFF7FD3E8.toInt()   // 停顿时长：稍微亮一点，扫一眼就看见
+    val C_FLUENCY_DIM  = 0xFF637985.toInt()   // 引述的句子原文：压暗
+
     /** 生成标注图例（设置页「标注图例」按钮用） */
     fun legend(): String = buildString {
         append("识别标注图例（自动，不用提示词）：\n\n")
         append("🔴 红字 + 下划线 ＝ 代词（这个/那个/它…）\n")
         append("    要改成具体名字，比如「这个三角形」→「红色的三角形」\n\n")
-        append("🩶 灰字 + 删除线 ＝ 口头禅（嗯/啊/呃…）\n")
+        append("🩶 灰字 + 下划线 ＝ 口头禅（嗯/啊/呃…）\n")
         append("    能省就省，让话更干净\n\n")
         append("🟠 暗金 + 下划线 ＝ 模糊词（东西/玩意儿…，第 9 次会话后才开）\n")
         append("    它等于没说，换成具体名字\n\n")
@@ -45,11 +52,15 @@ object Annotator {
     /**
      * 把句子序列渲染成带标注的富文本。
      * @param chapters 当前已画到的章节数（每 60 秒一段，决定分隔行）
+     * @param fluency 「说得顺不顺」报告（R12）；非 null 时接在所有识别文字**最后**。
+     *                事后才生成，实时不打扰 —— 孩子正在组织思路时蹦一个「停了 2.4 秒」
+     *                出来，那是打断不是提示。
      */
     fun build(
         sentences: List<RuleEngine.Sentence>,
         chapters: Int,
-        prefs: AnnotationPrefs
+        prefs: AnnotationPrefs,
+        fluency: Fluency.Report? = null
     ): SpannableStringBuilder {
         val sb = SpannableStringBuilder()
         if (!prefs.enabled) {
@@ -65,6 +76,8 @@ object Annotator {
                 if (!nextMerged) sb.append(" ")
             }
             if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
+            // 流畅度报告独立于标注主开关：它是一段说明文字，不是给字加的标记
+            if (fluency != null) appendFluency(sb, fluency)
             return sb
         }
         var lastChapter = 0
@@ -78,7 +91,8 @@ object Annotator {
                 sb.setSpan(ForegroundColorSpan(C_UNCLEAR), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             } else {
                 // 代词 / 口头禅 / 模糊词 按位置合并，避免重叠互相覆盖
-                val pron = if (prefs.pronouns) RuleEngine.matchPronouns(s.text) else emptyList()
+                // 代词命中用「设置里可编辑的词表」（prefs.pronounList），与终判 evaluate 同一套
+                val pron = if (prefs.pronouns) RuleEngine.matchPronouns(s.text, prefs.pronounList) else emptyList()
                 val fill = if (prefs.fillers) RuleEngine.matchFillers(s.text) else emptyList()
                 val muzz = if (prefs.muzzy) RuleEngine.matchMuzzy(s.text) else emptyList()
                 val marks = (pron.map { Mark(it.first, it.second, Mark.PRONOUN) } +
@@ -101,7 +115,8 @@ object Annotator {
                         }
                         else -> {
                             sb.setSpan(ForegroundColorSpan(C_FILLER), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                            sb.setSpan(StrikethroughSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            // 2026-10-23 用户要求：删除线（穿文字）改下划线（文字下方）
+                            sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }
                     idx = m.pos + m.word.length
@@ -128,7 +143,17 @@ object Annotator {
             if (!nextMerged) sb.append(" ")
         }
         if (sb.isEmpty()) sb.append("（点「录音」开始练习）")
+        if (fluency != null) appendFluency(sb, fluency)
         return sb
+    }
+
+    /** 把 R12 报告按行接在最后，每行一个颜色 */
+    private fun appendFluency(sb: SpannableStringBuilder, r: Fluency.Report) {
+        for ((line, color) in Fluency.lines(r)) {
+            val st = sb.length
+            sb.append(line)
+            sb.setSpan(ForegroundColorSpan(color), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     /** 改进摘要：一句话点出本场要改的地方，配合诊断一起看，能很快定位问题 */
@@ -164,5 +189,7 @@ data class AnnotationPrefs(
     val fillers: Boolean,
     val issues: Boolean,
     /** 模糊词（东西/玩意儿…）：L2，默认关闭，第 9 次会话起才开 */
-    val muzzy: Boolean = false
+    val muzzy: Boolean = false,
+    /** 代词词表（可编辑；"这个*" 这类带 * 的会把整段「这个X」标红）。默认见 Prefs.DEFAULT_PRONOUNS */
+    val pronounList: List<String> = RuleEngine.PRONOUNS
 )

@@ -96,7 +96,7 @@
         <item name="android:minHeight">46dp</item>
         <item name="android:layout_marginTop">6dp</item>
         <item name="android:background">@drawable/bg_card_soft</item>
-        <item name="android:textColor">@color/s_text</item>
+        <item name="android:textColor">@color/set_btn_text</item>
         <item name="android:textSize">14sp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:gravity">center_vertical|start</item>
@@ -118,11 +118,11 @@
     </style>
 
     <style name="SetBtnAccent" parent="SetBtn">
-        <item name="android:textColor">@color/s_accent</item>
+        <item name="android:textColor">@color/set_btn_text_accent</item>
     </style>
 
     <style name="SetBtnDanger" parent="SetBtn">
-        <item name="android:textColor">@color/s_danger</item>
+        <item name="android:textColor">@color/set_btn_text_danger</item>
     </style>
 
     <style name="SetDivider">

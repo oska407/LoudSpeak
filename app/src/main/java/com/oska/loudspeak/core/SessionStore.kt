@@ -79,7 +79,20 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
      */
     fun writeMeta(dir: File, mode: String, startedAt: Long, endedAt: Long, durationMs: Long,
                   take: Int, pronouns: Int, complete: Int, incomplete: Int, selfMarked: Int,
-                  exitKind: String, modelsNote: String, cropBias: Float) {
+                  exitKind: String, modelsNote: String, cropBias: Float,
+                  fluency: Fluency.Report? = null) {
+        // R12「说得顺不顺」的聚合值。只存汇总，**不存逐字时间戳**（10 分钟约 24KB，没必要）。
+        // 留着是为了将来画「练了两个月有没有进步」的趋势线 —— 单场看意义不大，跨会话才有。
+        val fl = if (fluency != null) JSONObject()
+            .put("sentences", fluency.nSentence)
+            .put("words", fluency.nWord)
+            .put("speakMs", fluency.speakMs)
+            .put("cps", fluency.cps.toDouble())
+            .put("maxLeadMs", fluency.maxLeadMs)
+            .put("gapCount", fluency.nGapTotal)
+            .put("gapMs", fluency.gapMs)
+            .put("maxGapMs", fluency.gaps.firstOrNull()?.gapMs ?: 0L)
+        else JSONObject.NULL
         val o = JSONObject()
             .put("sessionId", dir.name)
             .put("mode", mode)
@@ -92,6 +105,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             .put("stats", JSONObject()
                 .put("pronounCount", pronouns).put("completeCount", complete)
                 .put("incompleteCount", incomplete).put("selfMarkedCount", selfMarked))
+                .put("fluency", fl)
             .put("exitKind", exitKind)
             .put("cropBias", cropBias.toDouble())
             .put("chapters", JSONArray())
@@ -243,8 +257,14 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 if (it.moveToFirst()) it.getInt(0) == 1 else false
             }
         } catch (_: Exception) { false }
-        val trash = File(rootF, ".trash/${sessionId}-${System.currentTimeMillis()}")
-        if (!dir.renameTo(trash)) return "移动到回收站失败"
+        // ⚠️ 必须先把 .trash 建出来：renameTo 不会自动建父目录。
+        // 旧代码没建过，全新安装头一次删就 rename 失败 → 删除静默失效（2026-10-23 修）。
+        val trashDir = File(rootF, ".trash").apply { mkdirs() }
+        val trash = File(trashDir, "${sessionId}-${System.currentTimeMillis()}")
+        val moved = dir.renameTo(trash) || runCatching {
+            dir.copyRecursively(trash, overwrite = true); dir.deleteRecursively()
+        }.getOrDefault(false)
+        if (!moved) return "移动到回收站失败"
         // 星标写进 meta，回收站里恢复回来还认得（DB 行会删掉）
         try {
             val mf = File(trash, "meta.json")

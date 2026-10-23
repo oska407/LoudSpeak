@@ -101,7 +101,7 @@ object Skin {
     ) else Palette(
         bg = 0xFFF5F7F8.toInt(), card = 0xFFFFFFFF.toInt(), soft = 0xFFEDF1F4.toInt(),
         stroke = 0xFFDCE3E8.toInt(),
-        text = 0xFF18222A.toInt(), text2 = 0xFF5C6A75.toInt(), text3 = 0xFF8A969F.toInt(),
+        text = 0xFF18222A.toInt(), text2 = 0xFF5C6A75.toInt(), text3 = 0xFF7C8993.toInt(),
         accent = 0xFF16A34A.toInt(), onAccent = 0xFFFFFFFF.toInt(),
         ok = 0xFF16A34A.toInt(), warn = 0xFFB45309.toInt(), danger = 0xFFDC2626.toInt(),
         lcdBg = 0xFF0E1A12.toInt(), lcdOn = 0xFF4ADE80.toInt(), lcdOff = 0xFF1E2C24.toInt(),
@@ -119,7 +119,7 @@ object Skin {
     ) else Palette(
         bg = 0xFFF3ECDF.toInt(), card = 0xFFFFFBF2.toInt(), soft = 0xFFEDE3D2.toInt(),
         stroke = 0xFFDCCFB6.toInt(),
-        text = 0xFF2A2520.toInt(), text2 = 0xFF6B6152.toInt(), text3 = 0xFF968B78.toInt(),
+        text = 0xFF2A2520.toInt(), text2 = 0xFF6B6152.toInt(), text3 = 0xFF867B68.toInt(),
         accent = 0xFFB45309.toInt(), onAccent = 0xFFFFFFFF.toInt(),
         ok = 0xFF4D7C0F.toInt(), warn = 0xFFB45309.toInt(), danger = 0xFFB91C1C.toInt(),
         lcdBg = 0xFF2A241C.toInt(), lcdOn = 0xFFE8C07A.toInt(), lcdOff = 0xFF3A3226.toInt(),
@@ -129,7 +129,7 @@ object Skin {
     private fun terminal(light: Boolean) = if (!light) Palette(
         bg = 0xFF050807.toInt(), card = 0xFF0B1210.toInt(), soft = 0xFF101B17.toInt(),
         stroke = 0xFF1C2E26.toInt(),
-        text = 0xFFBDF5CE.toInt(), text2 = 0xFF5E8B6E.toInt(), text3 = 0xFF3F6152.toInt(),
+        text = 0xFFBDF5CE.toInt(), text2 = 0xFF5E8B6E.toInt(), text3 = 0xFF547E6B.toInt(),
         accent = 0xFF35D07F.toInt(), onAccent = 0xFF03110A.toInt(),
         ok = 0xFF35D07F.toInt(), warn = 0xFFD7C85B.toInt(), danger = 0xFFFF6B5E.toInt(),
         lcdBg = 0xFF03110A.toInt(), lcdOn = 0xFF35D07F.toInt(), lcdOff = 0xFF0F2419.toInt(),
@@ -137,7 +137,7 @@ object Skin {
     ) else Palette(
         bg = 0xFFF0F5F1.toInt(), card = 0xFFFEFFFE.toInt(), soft = 0xFFE4EDE7.toInt(),
         stroke = 0xFFCBDCD2.toInt(),
-        text = 0xFF0F241A.toInt(), text2 = 0xFF4C6B58.toInt(), text3 = 0xFF7E9A88.toInt(),
+        text = 0xFF0F241A.toInt(), text2 = 0xFF4C6B58.toInt(), text3 = 0xFF5F7C6A.toInt(),
         accent = 0xFF12824C.toInt(), onAccent = 0xFFFFFFFF.toInt(),
         ok = 0xFF12824C.toInt(), warn = 0xFF8A6D1F.toInt(), danger = 0xFFB3261E.toInt(),
         lcdBg = 0xFF03110A.toInt(), lcdOn = 0xFF35D07F.toInt(), lcdOff = 0xFF0F2419.toInt(),
@@ -155,7 +155,7 @@ object Skin {
     ) else Palette(
         bg = 0xFFF5F2FF.toInt(), card = 0xFFFFFFFF.toInt(), soft = 0xFFEDE7FF.toInt(),
         stroke = 0xFFDDD4F7.toInt(),
-        text = 0xFF1B1730.toInt(), text2 = 0xFF6B6392.toInt(), text3 = 0xFF9A93B8.toInt(),
+        text = 0xFF1B1730.toInt(), text2 = 0xFF6B6392.toInt(), text3 = 0xFF766D9C.toInt(),
         accent = 0xFF7C3AED.toInt(), onAccent = 0xFFFFFFFF.toInt(),
         ok = 0xFF059669.toInt(), warn = 0xFFB45309.toInt(), danger = 0xFFDB2777.toInt(),
         lcdBg = 0xFF120A1F.toInt(), lcdOn = 0xFF22D3EE.toInt(), lcdOff = 0xFF241A3C.toInt(),
@@ -256,13 +256,6 @@ object Skin {
 
         // 4) 着色类控件
         when (root) {
-            is Button -> {
-                val states = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
-                val onBg = intArrayOf(p.soft, p.accent)
-                val onFg = intArrayOf(if (p.light) p.text3 else 0xFF8FA0AC.toInt(), p.onAccent)
-                if (!gradientBg) root.backgroundTintList = ColorStateList(states, onBg)
-                root.setTextColor(ColorStateList(states, onFg))
-            }
             is Switch -> {
                 try {
                     root.thumbTintList = ColorStateList.valueOf(p.accent)
@@ -270,8 +263,27 @@ object Skin {
                         if (p.light) 0x553A4A55 else 0x66FFFFFF)
                 } catch (_: Exception) {}
             }
-            is CheckBox -> root.buttonTintList = ColorStateList.valueOf(p.accent)
-            is RadioButton -> root.buttonTintList = ColorStateList.valueOf(p.accent)
+            is CompoundButton -> {
+                // 单选/复选是「透明底压在卡片上」，没有强调色底。
+                // 此前误走下面的 Button 分支，字被染成 onAccent（浅色下=白）→ 白底白字看不见（2026-10-23 修）。
+                val states = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
+                root.setTextColor(ColorStateList(states, intArrayOf(p.text3, p.text)))
+                root.buttonTintList = ColorStateList.valueOf(p.accent)
+            }
+            is Button -> {
+                val states = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
+                if (gradientBg) {
+                    // 自带背景的按钮（设置页的浅色条 SetBtn 等）：底色是 card/soft 不是强调色，
+                    // 文字按它在布局里写的正文色映射，禁用态灰掉 —— 不能套 onAccent
+                    val base = mapColor(root.currentTextColor, p) ?: p.text
+                    root.setTextColor(ColorStateList(states, intArrayOf(p.text3, base)))
+                } else {
+                    val onBg = intArrayOf(p.soft, p.accent)
+                    val onFg = intArrayOf(if (p.light) p.text3 else 0xFF8FA0AC.toInt(), p.onAccent)
+                    root.backgroundTintList = ColorStateList(states, onBg)
+                    root.setTextColor(ColorStateList(states, onFg))
+                }
+            }
             is SeekBar -> {
                 root.progressTintList = ColorStateList.valueOf(p.accent)
                 root.thumbTintList = ColorStateList.valueOf(p.accent)

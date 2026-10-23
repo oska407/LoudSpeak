@@ -9,7 +9,17 @@
 
     <color name="s_text">#FFE9EFF4</color>
     <color name="s_text2">#FF8B99A5</color>
-    <color name="s_text3">#FF69757F</color>
+    <!-- 第三级（版本号之类）：原 #FF69757F 压在 s_bg 上只有 3.99，低于 WCAG 2.2 AA 的 4.5，
+         提亮到 #FF7F8C99 → s_bg 上 5.47、s_card 上 4.79，都可过。别再往下调。 -->
+    <color name="s_text3">#FF7F8C99</color>
+    <!-- 按钮文字禁用态：不参与 AA 判定（WCAG 1.4.3 豁免 inactive 控件），
+         但必须与正常态（s_text）肉眼可分，否则「为什么这个按钮灰了」看不出来。
+         取值沿用底部七键 btn_text.xml 里已经验证过的那个灰蓝，两边保持一致。 -->
+    <color name="s_text_dis">#FF8FA0AC</color>
+
+    <!-- SetBtn 三态底色：按下变亮（反馈）、禁用变暗且低于卡片本身（凹陷感） -->
+    <color name="s_card_press">#FF2C3A48</color>
+    <color name="s_card_dis">#FF1A2129</color>
 
     <color name="s_accent">#FF4FA3FF</color>
     <color name="s_ok">#FF46C08A</color>

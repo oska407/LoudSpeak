@@ -1,54 +1,51 @@
 package com.oska.loudspeak.core
 
-import java.io.File
+import android.content.Context
+import org.json.JSONObject
 
 /**
- * 离线自动判定（§R9「完成离线时的 qwen 的自动判定」）。
+ * 离线自动判定（§R9）。
  *
- * 两套后端，同一条接口：
+ * 两套后端，同一条接口（优先级：PC 桥，失败一律回退规则）：
  *  1) 规则后端（默认、永远可用、纯离线）：基于 RuleEngine 的代词/口头禅/句式问题，
  *     直接生成「本场改进评语」与每句追问语。不需要任何模型文件、不需要联网。
- *  2) 本地 Qwen 后端（可选、默认关）：若用户拷入了 Qwen GGUF 且开启了「本地 Qwen」开关，
- *     走 LlamaRunner 在手机上本地推理，产出更自然的评语；
- *     一旦加载/推理失败，**自动回退到规则后端**，绝不卡住判定流程。
+ *  2) 局域网 PC 判定桥（可选、默认关、需用户认可）：开启后把分句 POST 到家里 PC 上跑大模型，
+ *     取回 JSON 判定（idx + flags + summary）。默认关闭，关闭时判定数据绝不离开手机。
  *
- * 设计约定（§5.7）：Qwen 默认关闭、录后按需加载、判完立即释放；
- * 能否真正在 A3x 上跑通由 P0 真机实测决定（无 NPU、6GB 内存，0.6B Q4 约 400MB）。
+ * 【2026-10-24 移除：手机本地 Qwen 后端】
+ * 此前预留了「拷 Qwen GGUF 进手机 → LlamaRunner 走 llama.cpp JNI 本地推理」的第三条路，已废弃：
+ *  - 原生推理库从未打进 APK，`LlamaRunner.available` 恒为 false，本地推理一次也没跑起来过；
+ *  - 真跑起来还需额外做 libllama.so 打包 + JNI C 实现，且 0.6B Q4 在无 NPU 的 A3x 上
+ *    单次判定预计 25~45 秒、质量也只是「勉强」（见 §5.7）。
+ * 判定上调质量的唯一路线收敛为 **PC 判定桥**（PC 上跑大模型，不受手机算力约束）。
  */
 object QwenJudge {
 
     /**
      * 判定入口。
-     * @param useLlm 设置里「本地 Qwen」是否开启
-     * @param ggufPath 本地 Qwen 模型路径（null = 没就位）
      * @return 总评语（可空，null=无内容） + 每句判定文本（index→文本，可空表示该句无需判定）
      */
     fun judge(
-        sentences: List<RuleEngine.Sentence>,
-        useLlm: Boolean,
-        ggufPath: String?
+        ctx: Context,
+        sentences: List<RuleEngine.Sentence>
     ): JudgeResult {
-        val problems = sentences.filter { it.isProblem }
+        // 规则后端：先给每句问题句填上规则追问语（PC 桥没接上时它就是最终判定）
         val perSentence = HashMap<Int, String?>()
-
-        // 规则后端：先给每句问题句填上规则追问语（Qwen 没接上时它就是最终判定）
-        for (s in problems) perSentence[s.index] = s.followUp.takeIf { it.isNotEmpty() }
-
+        for (s in sentences) if (s.isProblem) perSentence[s.index] = s.followUp.takeIf { it.isNotEmpty() }
         val overallRules = buildOverallRules(sentences)
 
-        // 本地 Qwen 后端：能接上就用它覆盖规则结果；接不上（文件/库/推理任一失败）静默回退
-        if (useLlm && ggufPath != null && LlamaRunner.available) {
+        // 局域网 PC 判定桥（§R9「PC 局域网加速」）：用户认可并开启后才走；失败静默回退
+        if (Prefs.pcJudgeEnabled(ctx)) {
             try {
-                val prompt = buildPrompt(sentences)
-                val llmText = LlamaRunner.generate(prompt, ggufPath)
-                if (llmText != null) {
-                    val parsed = parseLlm(llmText, sentences)
-                    if (parsed.first != null) {
-                        return JudgeResult(parsed.first, parsed.second.takeIf { it.isNotEmpty() } ?: perSentence)
-                    }
+                val pc = PcJudge.judge(ctx, sentences)
+                if (pc != null) {
+                    val per = HashMap<Int, String?>()
+                    for (s in sentences) if (s.isProblem) per[s.index] = s.followUp.takeIf { it.isNotEmpty() }
+                    CrashReporter.report("info", "判定走局域网 PC 桥", null)
+                    return JudgeResult(pc, per)
                 }
-            } catch (e: Exception) {
-                CrashReporter.report("warn", "本地 Qwen 判定回退到规则：${e.message?.take(120)}", e)
+            } catch (e: Throwable) {
+                CrashReporter.report("warn", "PC 判定桥回退规则：${e.message?.take(120)}", e)
             }
         }
         return JudgeResult(overallRules, perSentence)
@@ -70,21 +67,44 @@ object QwenJudge {
         }
     }
 
-    /** 给本地 Qwen 的提示（注意：这是**输入文本**，不是「提示词工程」；模型只按它读到的转录做判断） */
-    private fun buildPrompt(sentences: List<RuleEngine.Sentence>): String {
-        val lines = sentences.map {
-            if (it.uncertain) "（听不清）" else it.text
-        }
-        return "下面是孩子的一段口头表达，逐句列出。请只读这些内容，指出哪里用了代词（这个/那个/它）、" +
-                "哪里有口头禅（嗯/啊）、哪句没说完整。用中文、分点、不超过 4 句。\n" +
-                lines.joinToString(" / ")
-    }
+    /** 主谓宾结构类问题（由 PC 桥大模型或规则产生，词汇一致，驱动 followUp 与标注） */
+    private val STRUCT_FLAGS = setOf("缺主体", "半截句", "要素缺失")
 
-    /** 解析 Qwen 返回的自由文本：整体评语放 first，逐句判定暂不强解析（保留整体评语即可） */
-    private fun parseLlm(text: String, sentences: List<RuleEngine.Sentence>): Pair<String?, HashMap<Int, String>> {
-        val trimmed = text.trim().takeIf { it.isNotEmpty() } ?: return null to HashMap()
-        // 不强行把模型输出拆回逐句（避免错配）；整体评语直接用，逐句仍走规则追问语
-        return trimmed to HashMap()
+    /**
+     * 解析模型的 JSON 输出（本地 Qwen 与 PC 桥共用，格式一致）：
+     *  - 整体评语 → 作为最终总评返回（null 则上层用规则总评）
+     *  - 逐句 flags → 写回对应 Sentence.flags（先清掉旧的结构性标记，再填模型判的），
+     *    这样 followUp / 标注 / 计数都跟着模型判定走，而代词 / 口头禅仍由规则保底。
+     * 解析失败（模型没按 JSON 出 / 字段缺失 / 抛异常）→ 返回 null，上层整段回退规则，不污染任何句子。
+     */
+    internal fun parseLlm(text: String, sentences: List<RuleEngine.Sentence>): String? {
+        val raw = text.trim().takeIf { it.isNotEmpty() } ?: return null
+        // 模型可能在外面裹了 ```json ... ``` 或多余文字，截出第一个 { 到最后一个 }
+        val json = runCatching {
+            val s = raw.indexOf('{'); val e = raw.lastIndexOf('}')
+            if (s < 0 || e <= s) return null
+            JSONObject(raw.substring(s, e + 1))
+        }.getOrNull() ?: return null
+
+        val byIndex = sentences.associateBy { it.index }
+        runCatching {
+            val arr = json.getJSONArray("sentences")
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val idx = o.optInt("idx", -1)
+                val s = byIndex[idx] ?: continue
+                val flags = o.optJSONArray("flags") ?: continue
+                // 清掉旧的结构性标记（代词/口头禅不在 flags 里，不受影响），填模型判的
+                s.flags.removeAll(STRUCT_FLAGS)
+                for (j in 0 until flags.length()) {
+                    val f = flags.optString(j)
+                    if (f in STRUCT_FLAGS) s.flags.add(f)
+                }
+            }
+        }.onFailure { return null }
+
+        val summary = runCatching { json.optString("summary", "") }.getOrNull().orEmpty().trim()
+        return summary.ifEmpty { null }
     }
 }
 
@@ -93,33 +113,3 @@ data class JudgeResult(
     val overall: String?,
     val perSentence: Map<Int, String?>
 )
-
-/**
- * 本地 Qwen（GGUF）推理运行器（§5.7 / §R9）。
- *
- * ⚠️ 真实推理依赖 llama.cpp 的 Android 原生库（libllama）与 Qwen3-0.6B GGUF 权重，
- * 二者都不在本仓库默认打包内；这部分是 **P0 真机验证项**（无 NPU 的 A3x 能否跑通 0.6B 待定）。
- * 此处只做「能接上就用、接不上就 null」的守卫式封装：
- *  - available=false 时 generate() 永不调用，绝不抛 UnsatisfiedLinkError 崩溃；
- *  - 上层（QwenJudge）在 null 时回退规则后端。
- * 真机验证通过、把 libllama 与 GGUF 接入后，把下方 TODO 实现即可启用。
- */
-object LlamaRunner {
-    val available: Boolean = try {
-        // 没有这个库时不崩溃，只是标记为不可用；判定自动回退规则后端。
-        System.loadLibrary("llama")
-        true
-    } catch (_: UnsatisfiedLinkError) { false }
-      catch (_: Exception) { false }
-
-    /** 本地推理（同步、后台线程调用）。未接入原生库时永远返回 null。 */
-    @Suppress("UNUSED_PARAMETER")
-    fun generate(prompt: String, ggufPath: String): String? {
-        if (!available) return null
-        return try {
-            // TODO(P0)：调用已加载的 libllama 完成 0.6B 的 prompt→文本；
-            // 当前占位，返回 null 让上层走规则后端。
-            null
-        } catch (_: Exception) { null }
-    }
-}

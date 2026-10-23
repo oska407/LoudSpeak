@@ -25,6 +25,7 @@ import androidx.appcompat.app.AlertDialog
 import com.oska.loudspeak.core.AsrEngine
 import com.oska.loudspeak.core.ModelScanner
 import com.oska.loudspeak.core.NetChannel
+import com.oska.loudspeak.core.PcJudge
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
@@ -69,6 +70,12 @@ class SettingsActivity : LsActivity() {
     private lateinit var spLevel: Spinner
     private lateinit var tvLevelInfo: TextView
     private lateinit var tvLevelDetail: TextView
+    // R12 说得顺不顺
+    private lateinit var swFluency: Switch
+    private lateinit var tvFluencyGap: TextView
+    private lateinit var tvFluencyTop: TextView
+    private lateinit var seekFluencyGap: SeekBar
+    private lateinit var seekFluencyTop: SeekBar
 
     // 标注页
     private lateinit var swAnnot: Switch
@@ -76,6 +83,7 @@ class SettingsActivity : LsActivity() {
     private lateinit var swFiller: Switch
     private lateinit var swMuzzy: Switch
     private lateinit var swIssue: Switch
+    private lateinit var btnEditPronouns: View
 
     // 外观页
     private lateinit var rgColor: RadioGroup
@@ -94,8 +102,8 @@ class SettingsActivity : LsActivity() {
     private lateinit var tvPerm: TextView
     private lateinit var tvNetStatus: TextView
     private lateinit var tvPcAddr: TextView
-    private lateinit var swLlm: Switch
     private lateinit var rgNet: RadioGroup
+    private lateinit var swPcJudge: Switch
 
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
@@ -213,6 +221,11 @@ class SettingsActivity : LsActivity() {
         tvVadValue = findViewById(R.id.tvVadValue)
         tvGlowTimes = findViewById(R.id.tvGlowTimes)
         tvGlowValue = findViewById(R.id.tvGlowValue)
+        swFluency = findViewById(R.id.swFluency)
+        tvFluencyGap = findViewById(R.id.tvFluencyGap)
+        tvFluencyTop = findViewById(R.id.tvFluencyTop)
+        seekFluencyGap = findViewById(R.id.seekFluencyGap)
+        seekFluencyTop = findViewById(R.id.seekFluencyTop)
         seekDb = findViewById(R.id.seekDb)
         seekVad = findViewById(R.id.seekVad)
         seekGlowTimes = findViewById(R.id.seekGlowTimes)
@@ -248,17 +261,9 @@ class SettingsActivity : LsActivity() {
             }
         })
 
-        rgPunct.check(when (Prefs.punctMode(this)) {
-            0 -> R.id.rbPunctOff
-            2 -> R.id.rbPunctQwen
-            else -> R.id.rbPunctRule
-        })
+        rgPunct.check(if (Prefs.punctMode(this) == 0) R.id.rbPunctOff else R.id.rbPunctRule)
         rgPunct.setOnCheckedChangeListener { _, id ->
-            Prefs.setPunctMode(this, when (id) {
-                R.id.rbPunctOff -> 0
-                R.id.rbPunctQwen -> 2
-                else -> 1
-            })
+            Prefs.setPunctMode(this, if (id == R.id.rbPunctOff) 0 else 1)
         }
 
         rgGlowScope.check(when (Prefs.glowScope(this)) {
@@ -309,6 +314,8 @@ class SettingsActivity : LsActivity() {
             }
         })
 
+        initFluency()
+
         spLevel.adapter = simpleAdapter(listOf(
             "自动（按第几次会话递进）", "1 · L1 指代词", "2 · ＋L3 口头禅",
             "3 · ＋L2 模糊词", "4 · ＋L4-a 缺主体", "5 · 全开"))
@@ -321,6 +328,38 @@ class SettingsActivity : LsActivity() {
         }
         refreshLevel()
     }
+
+    // ---- R12「说得顺不顺」：三个副产品的开关与阈值 ----
+
+    private fun initFluency() {
+        swFluency.isChecked = Prefs.fluencyEnabled(this)
+        swFluency.setOnCheckedChangeListener { _, v -> Prefs.setFluencyEnabled(this, v) }
+
+        // 0.8s ~ 3.0s，步长 0.1s（22 档）。下限有意卡在 800：不能比 VAD 断句阈值还小
+        seekFluencyGap.max = 22
+        seekFluencyGap.progress = ((Prefs.fluencyGapMs(this) - 800) / 100).coerceIn(0, 22)
+        tvFluencyGap.text = gapLabel(Prefs.fluencyGapMs(this))
+        seekFluencyGap.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = 800 + p * 100
+                Prefs.setFluencyGapMs(this@SettingsActivity, v)
+                tvFluencyGap.text = gapLabel(v)
+            }
+        })
+
+        seekFluencyTop.max = 4
+        seekFluencyTop.progress = (Prefs.fluencyTopN(this) - 1).coerceIn(0, 4)
+        tvFluencyTop.text = "${Prefs.fluencyTopN(this)} 处"
+        seekFluencyTop.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = p + 1
+                Prefs.setFluencyTopN(this@SettingsActivity, v)
+                tvFluencyTop.text = "$v 处"
+            }
+        })
+    }
+
+    private fun gapLabel(ms: Int): String = String.format(java.util.Locale.US, "%.1fs", ms / 1000f)
 
     private fun refreshLevel() {
         if (!::tvLevelInfo.isInitialized) return
@@ -351,6 +390,7 @@ class SettingsActivity : LsActivity() {
         swFiller = findViewById(R.id.swFiller)
         swMuzzy = findViewById(R.id.swMuzzy)
         swIssue = findViewById(R.id.swIssue)
+        btnEditPronouns = findViewById(R.id.btnEditPronouns)
     }
 
     private fun initMark() {
@@ -365,6 +405,8 @@ class SettingsActivity : LsActivity() {
         swFiller.setOnCheckedChangeListener { _, v -> Prefs.setAnnotFillers(this, v) }
         swMuzzy.setOnCheckedChangeListener { _, v -> Prefs.setAnnotMuzzy(this, v) }
         swIssue.setOnCheckedChangeListener { _, v -> Prefs.setAnnotIssues(this, v) }
+        refreshPronounButton()
+        btnEditPronouns.setOnClickListener { editPronounList() }
         findViewById<Button>(R.id.btnLegend).setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("识别标注图例")
@@ -381,6 +423,57 @@ class SettingsActivity : LsActivity() {
             v.isEnabled = on
             v.alpha = if (on) 1f else 0.4f
         }
+    }
+
+    /** 按钮上顺手显示当前词表个数 */
+    private fun refreshPronounButton() {
+        if (!::btnEditPronouns.isInitialized) return
+        val n = Prefs.pronounList(this).size
+        (btnEditPronouns as? android.widget.TextView)?.text = "编辑代词词表（$n 个）"
+    }
+
+    /**
+     * 编辑代词词表（方案 A）：一个填写窗口，每行一个词，可增删改。
+     * 规则：
+     *  - "这个*" / "那个*" 这类带 * 的条目，会把「这个词开头的整段」都标成代词
+     *    （一直标到空白/标点），即「这个三角形 / 那个红色方块」整段提示换名字。
+     *  - 不带 * 的按原词精确匹配（如 这个、这样、那边）。
+     *  - 空行忽略；保存后实时判断与回放标注都用这一套。
+     */
+    private fun editPronounList() {
+        val cur = Prefs.pronounList(this)
+        val edit = EditText(this).apply {
+            setText(cur.joinToString("\n"))
+            setSelection(text.length)
+            hint = "每行一个词，例如：\n这个*\n那个*\n这边\n那边"
+            gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            minLines = 4
+            maxLines = 10
+            val d = resources.displayMetrics.density
+            setPadding((12 * d).toInt(), (10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt())
+        }
+        AlertDialog.Builder(this)
+            .setTitle("编辑代词词表")
+            .setMessage("每行一个词，可增删改。\n带 * 的词（如 这个*）会把「这个X / 那个X」整段标红；不带 * 按原词精确匹配。空行忽略。")
+            .setView(edit)
+            .setNegativeButton("取消", null)
+            .setNeutralButton("恢复默认") { _, _ ->
+                Prefs.resetPronounList(this)
+                refreshPronounButton()
+                Toast.makeText(this, "已恢复出厂词表 ${Prefs.DEFAULT_PRONOUNS.size} 个", Toast.LENGTH_SHORT).show()
+            }
+            .setPositiveButton("保存") { _, _ ->
+                val list = edit.text.toString().lineSequence()
+                    .map { it.trim() }.filter { it.isNotEmpty() }.toList()
+                if (list.isEmpty()) {
+                    Toast.makeText(this, "词表不能为空，已保留原词表", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                Prefs.setPronounList(this, list)
+                refreshPronounButton()
+                Toast.makeText(this, "已保存 $list 个词", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     // ================= 外观页 =================
@@ -668,14 +761,11 @@ class SettingsActivity : LsActivity() {
         tvPerm = findViewById(R.id.tvPerm)
         tvNetStatus = findViewById(R.id.tvNetStatus)
         tvPcAddr = findViewById(R.id.tvPcAddr)
-        swLlm = findViewById(R.id.swLlm)
         rgNet = findViewById(R.id.rgNet)
+        swPcJudge = findViewById(R.id.swPcJudge)
     }
 
     private fun initModel() {
-        swLlm.isChecked = Prefs.llmEnabled(this)
-        swLlm.setOnCheckedChangeListener { _, v -> Prefs.setLlmEnabled(this, v); refreshModelStatus() }
-
         findViewById<Button>(R.id.btnScan).setOnClickListener { scanModels() }
         findViewById<Button>(R.id.btnSaf).setOnClickListener {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 200)
@@ -734,6 +824,28 @@ class SettingsActivity : LsActivity() {
                 .show()
         }
 
+        swPcJudge.isChecked = Prefs.pcJudgeEnabled(this)
+        swPcJudge.setOnCheckedChangeListener { _, v ->
+            if (!v) { Prefs.setPcJudgeEnabled(this, false); refreshNet(); return@setOnCheckedChangeListener }
+            AlertDialog.Builder(this)
+                .setTitle("打开「PC 大模型判定」？")
+                .setMessage(
+                    "打开后，每次判定会把【本次的句子文字】发到家里这台 PC：\n" +
+                    "http://${Prefs.pcIp(this)}:${Prefs.pcJudgePort(this)}\n\n" +
+                    "录音文件本身永远不会发。PC 没开、断了、超时，都自动退回手机本地规则，不会卡住。\n\n" +
+                    "想要「数据绝不出手机」，保持关闭就行 —— 关着的时候 App 一次网络请求都不会发。"
+                )
+                .setPositiveButton("我认可，打开") { _, _ ->
+                    Prefs.setPcJudgeEnabled(this, true)
+                    refreshNet()
+                    Toast.makeText(this, "已打开，建议先点下面测一次", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("取消") { _, _ -> swPcJudge.isChecked = false }
+                .setCancelable(false)
+                .show()
+        }
+        findViewById<Button>(R.id.btnPcJudgeTest).setOnClickListener { testPcJudge() }
+
         findViewById<Button>(R.id.btnSelf).setOnClickListener {
             startActivity(Intent(this, SelfCheckActivity::class.java))
         }
@@ -750,10 +862,34 @@ class SettingsActivity : LsActivity() {
         if (!::tvNetStatus.isInitialized) return
         val ip = Prefs.pcIp(this)
         val mode = Prefs.netMode(this)
-        tvPcAddr.text = "ASR http://$ip:${Prefs.pcAsrPort(this)}\n判定 http://$ip:${Prefs.pcLlmPort(this)}"
+        tvPcAddr.text = "ASR http://$ip:${Prefs.pcAsrPort(this)}\n判定 http://$ip:${Prefs.pcJudgePort(this)}"
         tvNetStatus.text = buildString {
             append("当前选择：").append(NetChannel.name(mode)).append('\n')
-            append(NetChannel.statusText(this@SettingsActivity))
+            append(NetChannel.statusText(this@SettingsActivity)).append('\n')
+            append("PC 大模型判定：")
+                .append(if (Prefs.pcJudgeEnabled(this@SettingsActivity)) "开（判定走 PC，关不掉也回退本地）" else "关（纯离线）")
+        }
+    }
+
+    /**
+     * 「测试 PC 判定」：拿两句样例真跑一次 /judge，把结果说成人话。
+     * 走的是和正式判定完全相同的那条路（同一个 post、同一份超时），所以它能通就等于判定能用。
+     */
+    private fun testPcJudge() {
+        val ip = Prefs.pcIp(this)
+        val port = Prefs.pcJudgePort(this)
+        tvNetStatus.text = "测试中… http://$ip:$port/judge\n（真跑一次大模型，十几秒，别退出这一页）"
+        asrExecutor.execute {
+            val (ok, msg) = PcJudge.probe(ip, port)
+            runOnUiThread {
+                tvNetStatus.text = buildString {
+                    append("PC 判定测试：").append(msg).append('\n')
+                    append("PC 大模型判定：")
+                        .append(if (Prefs.pcJudgeEnabled(this@SettingsActivity)) "开" else "关")
+                }
+                Toast.makeText(this, if (ok) "PC 判定可用 ✓" else "PC 判定不通，判定会继续走本地规则",
+                    Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -767,23 +903,14 @@ class SettingsActivity : LsActivity() {
     private fun refreshModelStatus() {
         if (!::tvModelStatus.isInitialized) return
         val (m, t) = AsrEngine(Prefs.modelsDir(this)).checkFiles()
-        val llm = newestGguf()
         tvModelStatus.text = buildString {
             append("ASR 模型　").append(if (m?.isFile == true) "✓ ${m.length() / 1_000_000}MB" else "✗ 缺").append('\n')
-            append("ASR 词表　").append(if (t?.isFile == true) "✓" else "✗ 缺").append('\n')
-            append("Qwen 模型　").append(
-                if (llm != null) "✓ ${llm.name}（${llm.length() / 1_000_000}MB）" else "✗ 缺（可选）").append('\n')
-            append("Qwen 开关　").append(if (Prefs.llmEnabled(this@SettingsActivity)) "开" else "关").append("\n\n")
-            append("判定一定会有结果：开着用规则后端判；拷了 GGUF 且真机带推理库时自动升级为模型评语，否则回退规则，不会卡住。")
+            append("ASR 词表　").append(if (t?.isFile == true) "✓" else "✗ 缺").append("\n\n")
+            append("识别与判分全部在手机本地完成，不需要也不加载任何大模型。缺什么就补上面那一两种文件，其它都不用管。")
         }
     }
 
-    private fun newestGguf(): File? = try {
-        File(Prefs.llmDir(this)).listFiles { f: File -> f.isFile && f.name.endsWith(".gguf", true) }
-            ?.maxByOrNull { it.lastModified() }
-    } catch (_: Exception) { null }
-
-    /** 扫描常见位置：ASR（onnx+tokens）与 Qwen（gguf）一起列，选一个装一个 */
+    /** 扫描常见位置：把候选 ASR（onnx + tokens）列出来，选一个装一个 */
     private fun scanModels() {
         tvModelStatus.text = "扫描中…（App 目录 / Download / Documents，最多 6 层，几千个文件要点时间）"
         asrExecutor.execute {
@@ -795,7 +922,6 @@ class SettingsActivity : LsActivity() {
                         append("① 数据线/MTP 把文件拷到这个目录（能建子目录）：\n")
                         append(Prefs.modelsDir(this@SettingsActivity)).append('\n')
                         append("   ASR 放 asr/model.int8.onnx + asr/tokens.txt\n")
-                        append("   Qwen 放 llm/*.gguf\n")
                         append("② 点「从文件管理器选目录」，直接选放模型的那个文件夹（会搜子目录）\n")
                         append("为什么扫不到：Android 13+ 默认不允许读 Download，属系统限制，不是文件没放好。")
                     }
@@ -817,8 +943,7 @@ class SettingsActivity : LsActivity() {
             val ok = com.oska.loudspeak.core.ModelScanner.install(f, Prefs.modelsDir(this))
             runOnUiThread {
                 Toast.makeText(this,
-                    if (ok) "已装好：" + (if (f.kind == com.oska.loudspeak.core.ModelScanner.Kind.ASR)
-                        "语音识别（回主界面会自动加载）" else "Qwen 模型") else "安装失败",
+                    if (ok) "已装好：语音识别（回主界面会自动加载）" else "安装失败",
                     Toast.LENGTH_LONG).show()
                 refreshModelStatus()
             }
@@ -843,7 +968,7 @@ class SettingsActivity : LsActivity() {
         if (req == 200 && res == Activity.RESULT_OK && data?.data != null) {
             importModels(data.data!!)
         }
-        // 201 = 手动多选文件（.onnx + tokens.txt / .gguf）
+        // 201 = 手动多选文件（.onnx + tokens.txt）
         if (req == 201 && res == Activity.RESULT_OK && data != null) {
             val uris = ArrayList<Uri>()
             data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
@@ -866,7 +991,7 @@ class SettingsActivity : LsActivity() {
     }
 
     /**
-     * SAF：把所选目录（含子目录）里的 ASR / Qwen 文件分别装到对应位置。
+     * SAF：把所选目录（含子目录）里的 ASR 文件装上对应位置。
      * 早先只查一层、只认两个死文件名，所以「选了目录却什么也没导入」。
      */
     private fun importModels(treeUri: Uri) {
@@ -877,11 +1002,9 @@ class SettingsActivity : LsActivity() {
                 val rootId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
                 val onnx = ArrayList<Pair<String, Uri>>()
                 val tokens = ArrayList<Pair<String, Uri>>()
-                val gguf = ArrayList<Pair<String, Uri>>()
-                walkTree(cr, treeUri, rootId, onnx, tokens, gguf, 0)
+                walkTree(cr, treeUri, rootId, onnx, tokens, 0)
 
                 var asrOk = false
-                var llmCount = 0
                 if (onnx.isNotEmpty() && tokens.isNotEmpty()) {
                     val destAsr = File(Prefs.modelsDir(this), "asr").apply { mkdirs() }
                     val best = onnx.maxByOrNull { scoreName(it.first) }!!
@@ -889,15 +1012,10 @@ class SettingsActivity : LsActivity() {
                     copyFrom(cr, tokens.first().second, File(destAsr, "tokens.txt"))
                     asrOk = File(destAsr, "model.int8.onnx").isFile && File(destAsr, "tokens.txt").isFile
                 }
-                if (gguf.isNotEmpty()) {
-                    val destLlm = File(Prefs.llmDir(this)).apply { mkdirs() }
-                    for ((name, uri) in gguf) if (copyFrom(cr, uri, File(destLlm, name))) llmCount++
-                }
                 runOnUiThread {
                     Toast.makeText(this, buildString {
                         append("导入：ASR ")
                         append(if (asrOk) "✓" else if (onnx.isEmpty() && tokens.isEmpty()) "未选到" else "✗（缺 onnx 或 tokens）")
-                        append(" · Qwen ").append(if (llmCount > 0) "✓ $llmCount 个" else "未选到")
                     }, Toast.LENGTH_LONG).show()
                     refreshModelStatus()
                 }
@@ -909,8 +1027,7 @@ class SettingsActivity : LsActivity() {
 
     private fun walkTree(
         cr: android.content.ContentResolver, treeUri: Uri, dirId: String,
-        onnx: MutableList<Pair<String, Uri>>, tokens: MutableList<Pair<String, Uri>>,
-        gguf: MutableList<Pair<String, Uri>>, depth: Int
+        onnx: MutableList<Pair<String, Uri>>, tokens: MutableList<Pair<String, Uri>>, depth: Int
     ) {
         if (depth > 4) return
         val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
@@ -922,13 +1039,12 @@ class SettingsActivity : LsActivity() {
             while (c.moveToNext()) {
                 val id = c.getString(0); val name = c.getString(1) ?: continue; val mime = c.getString(2)
                 if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
-                    walkTree(cr, treeUri, id, onnx, tokens, gguf, depth + 1); continue
+                    walkTree(cr, treeUri, id, onnx, tokens, depth + 1); continue
                 }
                 val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
                 when {
                     name.equals("tokens.txt", true) -> tokens.add(name to uri)
                     name.endsWith(".onnx", true) -> onnx.add(name to uri)
-                    name.endsWith(".gguf", true) -> gguf.add(name to uri)
                 }
             }
         }

@@ -12,8 +12,8 @@
         <item name="android:gravity">center_vertical</item>
         <item name="android:paddingLeft">10dp</item>
         <item name="android:paddingRight">8dp</item>
-        <item name="android:paddingTop">6dp</item>
-        <item name="android:paddingBottom">6dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@color/card_bg</item>
     </style>

@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/s_card_soft" />
-    <corners android:radius="12dp" />
-</shape>
+<!-- SetBtn 的行内背景。
+     原来是一个纯色 shape：按下没有任何变化、禁用也看不出来，
+     跟同页面返回箭头（?attr/selectableItemBackgroundBorderless，有涟漪）的手感不一致。
+     补三态：禁用 → 凹陷；按下 → 提亮；默认 → 常规。
+     ⚠️ 这里用「嵌套 shape」而不是 @color：ColorDrawable 画不出 12dp 圆角。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:state_enabled="false">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/s_card_dis" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/s_card_press" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/s_card_soft" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+</selector>

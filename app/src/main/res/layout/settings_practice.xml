@@ -92,16 +92,12 @@
                     style="@style/SetRadio"
                     android:text="规则补标点 + 碎片合并（推荐）" />
 
-                <RadioButton
-                    android:id="@+id/rbPunctQwen"
-                    style="@style/SetRadio"
-                    android:text="规则 + 本地 Qwen 复核标点" />
             </RadioGroup>
 
             <TextView
                 style="@style/SetDesc"
                 android:paddingTop="2dp"
-                android:text="Qwen 那档要有本地模型才会真的跑；没有时自动用规则，结果一样不会改字。" />
+                android:text="只在尾巴上加标点、决定碎片要不要并回上一句，一个字都不改。" />
         </LinearLayout>
 
         <TextView style="@style/SetSection" android:text="红晕提醒" />
@@ -213,6 +209,80 @@
             <SeekBar
                 android:id="@+id/seekGlow"
                 style="@style/SetSeek" />
+        </LinearLayout>
+
+        <TextView style="@style/SetSection" android:text="说得顺不顺" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="讲完后的流畅度报告" />
+                    <TextView style="@style/SetDesc"
+                        android:text="讲完之后，在文字最后加一段报告：平均语速、开口前想了多久、停得最久的几处停在哪里。只说事实，不打分。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swFluency"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="多长的停顿算一次" />
+                    <TextView style="@style/SetDesc"
+                        android:text="超过这么久才记进去。她讲话停顿比较多的话，调大一点，只留真的卡住的地方。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvFluencyGap"
+                    style="@style/SetValue"
+                    android:text="1.2s" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekFluencyGap"
+                style="@style/SetSeek" />
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="列出最久的几处" />
+                    <TextView style="@style/SetDesc" android:text="报告里最多写几条。列太多会看不过来。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvFluencyTop"
+                    style="@style/SetValue"
+                    android:text="3 处" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekFluencyTop"
+                style="@style/SetSeek" />
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="4dp"
+                android:text="语速按「第一个字到最后一个字」算，不含句尾那段安静；停顿要按合并后的整句看，半截话接回上一句时，中间那次停顿也会被算进去。" />
         </LinearLayout>
 
         <TextView style="@style/SetSection" android:text="难度分级" />

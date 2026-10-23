@@ -68,11 +68,34 @@ object Prefs {
 
     // ---- 句末断句的语法优化（R11）----
     /**
-     * 0 = 只用停顿断句（原行为）/ 1 = 停顿 + 规则标点与短句合并 / 2 = 规则 + 本地 Qwen 复核。
+     * 0 = 只用停顿断句（原行为）/ 1 = 停顿 + 规则标点与短句合并。
      * 「不改字」是硬约定：只加标点、只把碎片并回上一句，一个字都不替换、不删。
      */
     fun punctMode(ctx: Context): Int = sp(ctx).getInt("punctMode", 1)
     fun setPunctMode(ctx: Context, v: Int) = sp(ctx).edit().putInt("punctMode", v.coerceIn(0, 2)).apply()
+
+    // ---- 「说得顺不顺」（R12，SenseVoice 字级时间戳的三个副产品）----
+    /**
+     * 独立开关，默认开。**不进 L1–L5 分级**（§8.6）：
+     * 流畅度是「怎么说」，措辞完整是「说什么」，两个维度混在一张分级表里会变得没法解释。
+     * 关掉 = 会话结束不再生成那段报告，实时链路一个字都不受影响。
+     */
+    fun fluencyEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("fluencyEnabled", true)
+    fun setFluencyEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("fluencyEnabled", v).apply()
+
+    /**
+     * 卡顿阈值（毫秒），超过这么久才算「停了一下」，默认 1200。
+     *
+     * ⚠️ 为什么下限卡在 800：[Prefs.vadSilenceMs] 是 VAD 的静音断句阈值（默认 800ms），
+     * 卡顿阈值必须**大于**它，否则「正常的句间停顿」和「句内卡壳」会互相打架。
+     * 上限 3000：再长就不是卡壳，是停下来想整道题了（那属于讲题节奏，不算表达问题）。
+     */
+    fun fluencyGapMs(ctx: Context): Int = sp(ctx).getInt("fluencyGapMs", 1200)
+    fun setFluencyGapMs(ctx: Context, v: Int) = sp(ctx).edit().putInt("fluencyGapMs", v.coerceIn(800, 3000)).apply()
+
+    /** 报告里列「停得最久」的几处，默认 3 条（可调 1–5）。列太多等于噪音。 */
+    fun fluencyTopN(ctx: Context): Int = sp(ctx).getInt("fluencyTopN", 3)
+    fun setFluencyTopN(ctx: Context, v: Int) = sp(ctx).edit().putInt("fluencyTopN", v.coerceIn(1, 5)).apply()
 
     // ---- 网络模型通道（R11 预留）----
     /** 0 自动（探活成功走 PC）/ 1 仅本地 / 2 仅 PC。当前 App 未申请 INTERNET，见 NetChannel。 */
@@ -89,6 +112,32 @@ object Prefs {
     fun annotIssues(ctx: Context): Boolean = sp(ctx).getBoolean("annotIssues", true)
     fun setAnnotIssues(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotIssues", v).apply()
 
+    /**
+     * 默认代词词表（§8.1 / R9）：可在设置里编辑。
+     * - 在「这个 / 那个」后加 *（写成 "这个*" / "那个*"）表示「这个词开头的整段都算代词」，
+     *   一直标到空白或标点为止 —— 把「这个三角形」整段提示换成名字（用户要求的「这个X / 那个X」）。
+     * - 其余为完整指代词，按原词精确匹配。
+     * 「原有字」= 出厂这套，默认就是它，用户在设置里可增删。
+     */
+    val DEFAULT_PRONOUNS = listOf(
+        "这个*", "那个*", "这些", "那些", "这样", "那样", "这边", "那边", "它"
+    )
+
+    /** 代词词表（可编辑）。首次读会自动写回默认，保证后续稳定 */
+    fun pronounList(ctx: Context): List<String> {
+        val raw = sp(ctx).getString("pronounList", null)
+        if (raw == null) {
+            setPronounList(ctx, DEFAULT_PRONOUNS)
+            return DEFAULT_PRONOUNS
+        }
+        return raw.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+    fun setPronounList(ctx: Context, list: List<String>) =
+        sp(ctx).edit().putString("pronounList", list.joinToString("|")).apply()
+
+    /** 一键恢复出厂代词词表 */
+    fun resetPronounList(ctx: Context) = setPronounList(ctx, DEFAULT_PRONOUNS)
+
     /** 一次性读出整套标注偏好 */
     fun annotationPrefs(ctx: Context): AnnotationPrefs =
         AnnotationPrefs(
@@ -96,7 +145,8 @@ object Prefs {
             pronouns = annotPronouns(ctx),
             fillers = annotFillers(ctx),
             issues = annotIssues(ctx),
-            muzzy = annotMuzzy(ctx)
+            muzzy = annotMuzzy(ctx),
+            pronounList = pronounList(ctx)
         )
 
     /** 模糊词标注（跟 L2 一起开，默认关） */
@@ -117,29 +167,31 @@ object Prefs {
 
     /**
      * PC 服务端 IP（§3.3 双通道）。PC 换机 / 换 IP 时只改这一处：
-     * ASR = http://<ip>:8010，Qwen = http://<ip>:11434。
+     * ASR = http://<ip>:8010（asr_server.py），判定 = http://<ip>:8011（judge_server.py）。
      */
     fun pcIp(ctx: Context): String = sp(ctx).getString("pcIp", "192.168.3.15")!!
     fun setPcIp(ctx: Context, ip: String) = sp(ctx).edit().putString("pcIp", ip.trim()).apply()
     fun pcAsrPort(ctx: Context): Int = sp(ctx).getInt("pcAsrPort", 8010)
-    fun pcLlmPort(ctx: Context): Int = sp(ctx).getInt("pcLlmPort", 11434)
+
+    /**
+     * PC 判定服务端口（judge_server.py，默认 8011）。
+     * 注意别和 11434 搞混：11434 是 Ollama 自己的端口，手机不直接访问它，
+     * 中间隔着 judge_server（负责把大模型的回答翻译成约定好的 JSON）。
+     */
+    fun pcJudgePort(ctx: Context): Int = sp(ctx).getInt("pcJudgePort", 8011)
 
     /** 模型目录（app 私有拷贝工作区，SAF 导入后落地于此） */
     fun modelsDir(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/models" } ?: "${ctx.filesDir.absolutePath}/models"
 
-    /** 本地 Qwen 目录（models 下的 llm 子目录，放 .gguf） */
-    fun llmDir(ctx: Context): String = "${modelsDir(ctx)}/llm"
-
-    /** <models>/llm 下最新的那个 .gguf（本地 Qwen 推理用；无则 null） */
-    fun newestLlm(ctx: Context): File? = try {
-        File(llmDir(ctx)).listFiles { f: File -> f.isFile && f.name.endsWith(".gguf", true) }
-            ?.maxByOrNull { it.lastModified() }
-    } catch (_: Exception) { null }
-
-    /** 本地 Qwen 开关：默认关（§5.7 可选、录后按需加载、判完立即释放） */
-    fun llmEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("llmEnabled", false)
-    fun setLlmEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("llmEnabled", v).apply()
+    /**
+     * 局域网 PC 判定桥开关（§R9「PC 局域网加速」路线）。
+     * 默认关：关闭时判定数据绝不离开手机（守住「完全离线、数据不出手机」）。
+     * 仅当用户明确认可「家庭可信 LAN 内可接受」时才打开；打开后终判会把本次分句 POST 到
+     * http://Prefs.pcIp:Prefs.pcJudgePort/judge（家里 PC 跑 judge_server.py）。
+     */
+    fun pcJudgeEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("pcJudgeEnabled", false)
+    fun setPcJudgeEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("pcJudgeEnabled", v).apply()
 
     // ================= 存储位置（§11.1：可改地址，只影响新会话） =================
 

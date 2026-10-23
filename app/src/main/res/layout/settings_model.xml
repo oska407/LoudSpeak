@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 设置 · 模型与通道：本地 ASR/Qwen + 网络模型通道（预留） -->
+<!-- 设置 · 模型与通道：本地 ASR + 网络模型通道 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -28,27 +28,18 @@
                 android:textColor="@color/s_text"
                 android:textSize="13sp" />
 
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+            <View style="@style/SetDivider" />
 
-                    <TextView style="@style/SetTitle" android:text="本地 Qwen 判定" />
-                    <TextView style="@style/SetDesc"
-                        android:text="可选，默认关。开了只是让评语更细；不开也一定会用规则判完。" />
-                </LinearLayout>
-
-                <Switch
-                    android:id="@+id/swLlm"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:paddingBottom="6dp"
+                android:text="下面几项是导入语音识别模型的方式，按需用。" />
 
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnScan"
-                style="@style/SetBtnAccent"
-                android:text="扫描并安装（ASR + Qwen 一起找）" />
+                style="@style/SetBtn"
+                android:text="扫描并安装 ASR 模型" />
 
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnSaf"
@@ -76,7 +67,7 @@
                 android:text="授予「所有文件访问」权限（扫 Download 用）" />
         </LinearLayout>
 
-        <TextView style="@style/SetSection" android:text="网络模型通道（预留）" />
+        <TextView style="@style/SetSection" android:text="网络通道" />
 
         <LinearLayout style="@style/SetCard">
 
@@ -130,10 +121,36 @@
                     android:text="改 IP" />
             </LinearLayout>
 
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="用家里 PC 的大模型判定" />
+                    <TextView
+                        style="@style/SetDesc"
+                        android:text="关着的时候，判定在手机上离线做完，录音和文字都不出手机。&#10;打开后，每次判定会把「这次的句子文字」发给上面的 PC，PC 上的大模型判完回结果；PC 没开、断了、超时，都自动退回手机本地规则，不会卡住也不会报错。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swPcJudge"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnPcJudgeTest"
+                style="@style/SetBtn"
+                android:layout_marginTop="0dp"
+                android:text="测试 PC 判定（发两句样例试试）" />
+
             <TextView
                 style="@style/SetDesc"
-                android:paddingBottom="8dp"
-                android:text="⚠ 目前 App 不申请网络权限（为了守住「完全离线、数据不出手机」这句承诺），所以这一页先只做选择与地址配置；等 PC 批次接入时才启用真正的探活与切换。" />
+                android:paddingTop="8dp"
+                android:text="⚠ 只有这一项会把数据发到局域网里的 PC（只发本次句子文字，不发录音）。想要「数据绝不出手机」，把开关关掉即可，关掉后 App 一次网络请求都不会发。" />
         </LinearLayout>
 
         <TextView style="@style/SetSection" android:text="其它" />

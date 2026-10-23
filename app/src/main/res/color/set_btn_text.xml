@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置页整行按钮的文字色：禁用态必须看得出来是「不能点」，
+     而不是像以前那样和正常态一样亮（点了没反应、也没变化）。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="@color/s_text_dis" />
+    <item android:color="@color/s_text" />
+</selector>
