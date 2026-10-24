@@ -71,8 +71,9 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="73"
-            android:orientation="vertical"
-            android:padding="6dp">
+        android:orientation="vertical"
+        android:paddingTop="6dp"
+        android:paddingBottom="3dp">
 
             <!-- 第 1 行 数据区。⚠️ 行高权重 152（原 142）：真机上卡片底部数字仍被裁掉一点，
                  2026-10-23 从按钮行(144→134)匀了 8 份过来，配合 DataCard padding 6→3dp -->
@@ -130,7 +131,7 @@
                 android:id="@+id/textArea"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="306"
+                android:layout_weight="348"
                 android:layout_marginTop="4dp"
                 android:background="@color/card_bg"
                 android:fillViewport="true"
@@ -142,8 +143,8 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="134"
-                android:layout_marginTop="4dp"
+                android:layout_weight="100"
+                android:layout_marginTop="2dp"
                 android:baselineAligned="false"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">

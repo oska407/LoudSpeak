@@ -40,7 +40,11 @@ class LcdDbView(private val v: View) {
         val style = p.dbStyle
         val w = v.width.toFloat(); val h = v.height.toFloat()
         val d = v.resources.displayMetrics.density
-        val pad = 10f * d
+        // 2026-10-24 修 #2：右侧安全边加大（原 10→12dp）+ 裁剪兜底，dB 不再贴边/出框
+        val pad = 12f * d
+
+        c.save()
+        c.clipRect(0f, 0f, w, h)   // 安全兜底：任何情况都不画出卡片范围
 
         // ---- 底 ----
         paint.color = p.lcdBg
@@ -61,61 +65,69 @@ class LcdDbView(private val v: View) {
             else -> Typeface.MONOSPACE
         }
 
-        // ---- 单位 dB 量宽（画在数字右侧、同一基线）----
+        // ---- 单位 dB 量宽（数字右侧、同基线）----
         labelPaint.typeface = textPaint.typeface
-        labelPaint.textSize = h * 0.17f
+        labelPaint.textAlign = Paint.Align.RIGHT
+        labelPaint.textSize = h * 0.15f
         labelPaint.color = color
         val dbTxt = "dB"
         val dbW = labelPaint.measureText(dbTxt)
-        val gap = 4f * d
+        val gap = 5f * d
 
-        // ---- 数字：贴右（dB 左边）、按字高垂直居中（R12 起不变）----
+        // ---- 数字：贴右（dB 左边）、按字高垂直居中；右侧安全边 pad ----
         val txt = "%.0f".format(displayL)
         textPaint.textAlign = Paint.Align.RIGHT
-        val numRight = w - pad - dbW - gap
+        val numRight = (w - pad - dbW - gap).coerceAtLeast(pad + 1f)
         val maxW = (numRight - pad).coerceAtLeast(1f)
-        var numSize = h * (if (style == Skin.DB_MINIMAL) 0.78f else 0.92f)
+        var numSize = h * (if (style == Skin.DB_MINIMAL) 0.74f else 0.86f)
         textPaint.textSize = numSize
         val tw = textPaint.measureText(txt)
         if (tw > maxW) {
             numSize *= maxW / tw
             textPaint.textSize = numSize
         }
+        val actualW = if (tw > maxW) maxW else tw
         val capH = numSize * 0.72f
         val baseline = (h + capH) / 2f
         c.drawText(txt, numRight, baseline, textPaint)
-        // dB 与数字同一基线（2026-10-23 用户要求：单位在计数右侧）
+        // dB 与数字同一基线，靠右 pad 内（2026-10-24 修：加大右侧安全边 + 裁剪兜底，dB 不再贴边/出框）
         c.drawText(dbTxt, w - pad, baseline, labelPaint)
 
         // ---- 左侧：判定（跟着阈值一起变色）----
         labelPaint.textAlign = Paint.Align.LEFT
-        labelPaint.textSize = h * 0.16f
+        labelPaint.textSize = h * 0.15f
         c.drawText(if (ok) "正常" else "偏小", pad, h * 0.52f, labelPaint)
 
-        // ---- 底部强度细条（2026-10-23 恢复）----
-        // 数字无下延部，字底到卡底本来就是空的 —— 条画在这里，不缩数字、不挤占计数。
-        drawLevelBar(c, w, h, d, pad, color)
+        // ---- 底部强度细条（2026-10-23 恢复；2026-10-24 修 #3：只到数字左侧，不伸到数字/dB 下方）----
+        // 数字无下延部，字底到卡底本来就是空的 —— 条画在这里；右端收在数字左缘之前，避免压在计数下。
+        val barRight = (numRight - actualW - 2f * d).coerceAtLeast(pad + 16f * d)
+        drawLevelBar(c, h, d, pad, color, barRight)
+
+        c.restore()
     }
 
-    /** 24 段细条 + 阈值刻线：亮到 displayL/60，亮段颜色跟判定同色，暗段留极淡的影子 */
-    private fun drawLevelBar(c: Canvas, w: Float, h: Float, d: Float, pad: Float, color: Int) {
+    /** 24 段细条 + 阈值刻线：亮到 displayL/60，亮段颜色跟判定同色，暗段留极淡的影子。
+     *  barRight = 强度条右端上限（数字左缘之前），避免条伸到数字/dB 下方（2026-10-24 修 #3）。 */
+    private fun drawLevelBar(c: Canvas, h: Float, d: Float, pad: Float, color: Int, barRight: Float) {
         val barH = 4f * d
         val barBottom = 3.5f * d
         val top = h - barBottom - barH
-        val span = w - pad * 2
+        val left = pad
+        val span = (barRight - left).coerceAtLeast(1f)
         val n = 24
         val segGap = 2f * d
-        val segW = (span - segGap * (n - 1)) / n
+        val segW = ((span - segGap * (n - 1)) / n).coerceAtLeast(1f)
         val lit = (displayL.coerceIn(0f, 60f) / 60f * n).toInt()
         val dim = (color and 0x00FFFFFF) or 0x26000000
         paint.strokeWidth = 0f
         for (i in 0 until n) {
-            val x0 = pad + i * (segW + segGap)
+            val x0 = left + i * (segW + segGap)
+            if (x0 > barRight) break
             paint.color = if (i < lit) color else dim
             c.drawRoundRect(x0, top, x0 + segW, top + barH, 1.5f * d, 1.5f * d, paint)
         }
         // 阈值刻线：亮白细线压在对应段上，一眼看出「过线才算响」
-        val thX = pad + (threshold.coerceIn(0, 60) / 60f) * span
+        val thX = left + (threshold.coerceIn(0, 60) / 60f) * span
         paint.color = 0xB3FFFFFF.toInt()
         c.drawRect(thX - 1f * d, top - 1.5f * d, thX + 1f * d, top + barH + 1.5f * d, paint)
     }
