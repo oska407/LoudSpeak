@@ -38,14 +38,19 @@
             <View style="@style/SetDivider" />
 
             <LinearLayout style="@style/SetRow">
-                <TextView
-                    style="@style/SetTitle"
+                <LinearLayout
                     android:layout_width="0dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="代词（红字 + 下划线）" />
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="L1 代词（红字 + 下划线）" />
+                    <TextView style="@style/SetDesc"
+                        android:text="把「这个 / 那个」这类词标红，提醒换成具体名字。" />
+                </LinearLayout>
 
                 <Switch
-                    android:id="@+id/swPron"
+                    android:id="@+id/swL1"
                     style="@style/SetSwitch" />
             </LinearLayout>
 
@@ -54,10 +59,11 @@
                     style="@style/SetTitle"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:text="口头禅（灰字 + 下划线）" />
+                    android:paddingStart="16dp"
+                    android:text="用大模型标代词（代替词表）" />
 
                 <Switch
-                    android:id="@+id/swFiller"
+                    android:id="@+id/swL1Model"
                     style="@style/SetSwitch" />
             </LinearLayout>
 
@@ -66,10 +72,30 @@
                     style="@style/SetTitle"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:text="模糊词（暗金 + 下划线）" />
+                    android:paddingStart="16dp"
+                    android:text="也标口头禅（灰字 + 下划线）" />
 
                 <Switch
-                    android:id="@+id/swMuzzy"
+                    android:id="@+id/swL1Filler"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="L2 不完整句（橙下划线 + ⚠）" />
+                    <TextView style="@style/SetDesc"
+                        android:text="话没说完就断了，或者讲了过程却没给结论。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swL2"
                     style="@style/SetSwitch" />
             </LinearLayout>
 
@@ -78,12 +104,70 @@
                     style="@style/SetTitle"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:text="句式问题（⚠ 橙色标签）" />
+                    android:paddingStart="16dp"
+                    android:text="用大模型判（代替本地规则）" />
 
                 <Switch
-                    android:id="@+id/swIssue"
+                    android:id="@+id/swL2Model"
                     style="@style/SetSwitch" />
             </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="L3 指代歧义（暗金 ?）" />
+                    <TextView style="@style/SetDesc"
+                        android:text="旁人听不出这个代词指什么时才标。要开 PC 判定才有。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swL3"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="L4 更清楚的说法（蓝绿 →）" />
+                    <TextView style="@style/SetDesc"
+                        android:text="句末一个小箭头，点开才看改写示范，默认不占版面。要开 PC 判定才有。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swL4"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <TextView
+                    style="@style/SetTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="标注字号" />
+
+                <TextView
+                    android:id="@+id/tvAnnFont"
+                    style="@style/SetValue"
+                    android:text="10sp" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekAnnFont"
+                style="@style/SetSeek" />
 
             <View style="@style/SetDivider" />
 
@@ -98,6 +182,80 @@
                 android:text="看看标注图例（每种颜色是什么意思）" />
         </LinearLayout>
 
+        <TextView style="@style/SetSection" android:text="说得顺不顺" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="讲完后的流畅度报告" />
+                    <TextView style="@style/SetDesc"
+                        android:text="讲完之后，在文字最后加一段报告：平均语速、开口前想了多久、停得最久的几处停在哪里。只说事实，不打分。不需要就在这里关掉，主界面就不会再显示。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swFluency"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="多长的停顿算一次" />
+                    <TextView style="@style/SetDesc"
+                        android:text="超过这么久才记进去。她讲话停顿比较多的话，调大一点，只留真的卡住的地方。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvFluencyGap"
+                    style="@style/SetValue"
+                    android:text="1.2s" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekFluencyGap"
+                style="@style/SetSeek" />
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="列出最久的几处" />
+                    <TextView style="@style/SetDesc" android:text="报告里最多写几条。列太多会看不过来。" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvFluencyTop"
+                    style="@style/SetValue"
+                    android:text="3 处" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekFluencyTop"
+                style="@style/SetSeek" />
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="4dp"
+                android:text="语速按「第一个字到最后一个字」算，不含句尾那段安静；停顿要按合并后的整句看，半截话接回上一句时，中间那次停顿也会被算进去。" />
+        </LinearLayout>
+
         <TextView style="@style/SetSection" android:text="标注说明" />
 
         <LinearLayout style="@style/SetCard">
@@ -105,7 +263,7 @@
                 style="@style/SetDesc"
                 android:paddingTop="12dp"
                 android:paddingBottom="12dp"
-                android:text="四类标注都是「她自己一眼能看出来」的：颜色区分种类，符号区分程度。\n红＋下划线＝代词，要换成名字；灰＋下划线＝口头禅，能省就省；暗金＋下划线＝模糊词（第 9 次会话后才开）；⚠＝句子不完整。\n标注只提示，不给分、不排名。" />
+                android:text="四层标注，每层可以单独关，越往上越懂她的意思：\nL1 红＋下划线＝代词，要换成名字；\nL2 橙下划线＋⚠＝话没说完（或没给结论）；\nL3 暗金 ?＝这个代词旁人猜不到指什么；\nL4 蓝绿 →＝点开看「更清楚的说法」（默认折叠，不占版面）。\n颜色区分种类，符号区分程度，尽量不写字。标注只提示，不给分、不排名。" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

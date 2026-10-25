@@ -7,9 +7,10 @@ package com.oska.loudspeak.core
  */
 object RuleEngine {
 
-    /** L1 默认词表（§8.1 / §14.2 D3）。可在设置里增删，这里是出厂默认：
-     *  含 这/那/这边/那边 的各形态，且「这个/那个」作为子串会自动覆盖「这个X / 那个X」。 */
-    val PRONOUNS = listOf("这个", "那个", "这些", "那些", "这样", "那样", "这边", "那边", "它")
+    /** L1 默认词表（§8.1 / §14.2 D3）。可在设置里增删，这里是出厂默认。
+     *  用通配符覆盖：? = 一个字，* = 多个字（直到空白/标点）。
+     *  「这?」覆盖 这个/这些/这样/这边…；「那?」覆盖 那个/那些/那样/那边…。 */
+    val PRONOUNS = listOf("这?", "那?")
 
     /** 口头禅/填充词（§R9 标注体系）：纯语气词，与代词不重叠；弱化显示，提示「能省就省」 */
     val FILLERS = listOf("嗯", "啊", "呃", "额", "哦", "唔", "哎", "呀", "诶")
@@ -104,8 +105,17 @@ object RuleEngine {
          */
         var absMs: LongArray = LongArray(0),
         /** 与 [absMs] 一一对应的字表（已剥壳） */
-        var absWords: Array<String> = emptyArray()
+        var absWords: Array<String> = emptyArray(),
+
+        // ---- 四层标注（标注多层次设计 v1）：大模型结果挂在句子上 ----
+        /** 大模型判出的代词（原文 + 是否歧义）。null = 还没跑模型 / 模型层没开 */
+        var modelPronouns: MutableList<ModelPronoun>? = null,
+        /** L4：大模型给的「更清楚的说法」，null = 没给 */
+        var rewrite: String? = null,
+        /** L4：大模型给的智能追问语；非空时优先于规则追问 [followUp] */
+        var modelFollowUp: String? = null
     ) {
+
         /** 显示用文本：原文 + 补的标点。**原文一个字都不改**（硬约定） */
         val displayText: String get() = text + punct
         /** 统计口径：并回上一句的碎片不算独立一句 */
@@ -116,6 +126,8 @@ object RuleEngine {
         val isProblem: Boolean get() = judgeable && !selfMarked && (pronouns.isNotEmpty() || flags.isNotEmpty())
         val followUp: String
             get() = when {
+                // L4 开时大模型会给语境化的追问（如「你刚说等于 8，是哪个式子？」），比罐头追问有用
+                !modelFollowUp.isNullOrBlank() -> modelFollowUp!!
                 pronouns.isNotEmpty() -> "这个是哪个？能叫出它的名字吗？"
                 flags.contains("模糊词") -> "「东西/玩意儿」是什么？换成它的名字。"
                 flags.contains("半截句") -> "这句话说完了吗？把话补完整。"
@@ -124,33 +136,59 @@ object RuleEngine {
                 else -> ""
             }
     }
+    /** 大模型返回的一个代词：原文 + 旁听者是否猜不到（歧义）。
+     * 只存原文、不存字符下标 —— 让模型数 offset 它数不准，App 端自己子串定位。 */
+    data class ModelPronoun(val word: String, val ambiguous: Boolean)
+
+    /**
+     * 把大模型给的代词原文在句内定位，返回（词, 位置），按位置升序且不重叠。
+     * 同一个词出现多次会全部命中；被更长命中包含的短命中会被丢掉，避免同一处重复标记。
+     */
+    fun locatePronouns(text: String, words: List<String>): List<Pair<String, Int>> {
+        val hits = ArrayList<Pair<String, Int>>()
+        for (w in words) {
+            if (w.isBlank()) continue
+            var from = 0
+            while (from <= text.length - w.length) {
+                val p = text.indexOf(w, from)
+                if (p < 0) break
+                hits.add(w to p)
+                from = p + w.length
+            }
+        }
+        hits.sortWith(compareBy<Pair<String, Int>> { it.second }.thenByDescending { it.first.length })
+        val out = ArrayList<Pair<String, Int>>()
+        var end = -1
+        for (h in hits) {
+            if (h.second < end) continue          // 被前面那条更长的命中包含 → 丢掉
+            out.add(h)
+            end = h.second + h.first.length
+        }
+        return out
+    }
+
 
     /**
      * 对一句做 L1 匹配。返回命中列表（词, 位置）。
-     * @param list 代词词表（来自设置，可编辑；默认 PRONOUNS）。
-     *   支持「前缀写法」：条目以 * 结尾（如 "这个*"）表示「这个词开头的整段都标」，
-     *   一直标到空白/标点为止 —— 把「这个三角形」整段提示换成名字。
+     * @param list 代词词表（来自设置，可编辑；默认 PRONOUNS）。支持通配符：
+     *   - `?` 代表「一个字」：如 `这?` 覆盖 这个/这些/这样/这边…（这 + 任意一个字）。
+     *   - `*` 代表「多个字」（至少一个，直到空白/标点为止）：如 `这*` 把「这个三角形」整段标红。
+     *   纯文字（无通配符）按原词精确匹配，向下兼容。
      */
     fun matchPronouns(text: String, list: List<String> = PRONOUNS): List<Pair<String, Int>> {
         val hits = mutableListOf<Pair<String, Int>>()
         for (raw in list) {
-            val base = raw.trim().removeSuffix("*").removePrefix("*")
-            if (base.isEmpty()) continue
-            val prefix = raw != base
-            var i = text.indexOf(base)
-            while (i >= 0) {
-                val end = if (prefix) {
-                    var e = i + base.length
-                    while (e < text.length) {
-                        val c = text[e]
-                        if (c.isWhitespace() || c == '，' || c == '。' || c == '、' ||
-                            c == ',' || c == '.' || c == '；' || c == ';') break
-                        e++
-                    }
-                    e
-                } else i + base.length
-                hits.add(text.substring(i, end) to i)
-                i = text.indexOf(base, end)
+            val pat = raw.trim()
+            if (pat.isEmpty()) continue
+            var s = 0
+            while (s <= text.length) {
+                val end = matchPatternAt(text, s, pat)
+                if (end > s) {
+                    hits.add(text.substring(s, end) to s)
+                    s = end
+                } else {
+                    s++
+                }
             }
         }
         // 去掉互相重叠的命中（按位置排好后，跳过落在已标区间内的）
@@ -161,6 +199,56 @@ object RuleEngine {
             if (p >= lastEnd) { out.add(w to p); lastEnd = p + w.length }
         }
         return out
+    }
+
+    /** 命中边界：空白与中英文标点都算，避免 `*` 跨句吞字 */
+    private fun isBoundary(c: Char): Boolean = c.isWhitespace()
+        || c == '，' || c == '。' || c == '、' || c == '；' || c == '：'
+        || c == '！' || c == '？' || c == '…' || c == '（' || c == '）'
+        || c == '"' || c == '“' || c == '”' || c == '\'' || c == '‘' || c == '’'
+        || c == ',' || c == '.' || c == ';' || c == ':' || c == '!' || c == '?'
+        || c == '(' || c == ')'
+
+    /**
+     * 从 text[start] 起尝试匹配 pattern（支持 ? 一个字、* 多个字），返回结束下标（不含）；不匹配返回 -1。
+     */
+    private fun matchPatternAt(text: String, start: Int, pattern: String): Int {
+        var ti = start
+        var pi = 0
+        while (pi < pattern.length) {
+            val p = pattern[pi]
+            when {
+                p == '?' -> {
+                    if (ti >= text.length) return -1
+                    ti++
+                    pi++
+                }
+                p == '*' -> {
+                    val nextLit = (pi + 1 until pattern.length)
+                        .firstOrNull { pattern[it] != '*' }?.let { pattern[it] }
+                    if (nextLit == null) {
+                        // * 在末尾：吃掉直到边界（至少一个字）
+                        if (ti >= text.length) return -1
+                        while (ti < text.length && !isBoundary(text[ti])) ti++
+                    } else {
+                        // * 在中间：吃到下一个字面量前（遇边界则整段不匹配）
+                        while (ti < text.length && !isBoundary(text[ti])) {
+                            if (text[ti] == nextLit) break
+                            ti++
+                        }
+                        if (ti >= text.length || text[ti] != nextLit) return -1
+                        // 停在 nextLit 上，交给下一个字面量匹配
+                    }
+                    pi++
+                }
+                else -> {
+                    if (ti >= text.length || text[ti] != p) return -1
+                    ti++
+                    pi++
+                }
+            }
+        }
+        return ti
     }
 
     /** 口头禅匹配（§R9 标注体系）。返回命中列表（词, 位置）。 */

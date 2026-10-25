@@ -24,7 +24,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.LoudSpeak">
+        android:theme="@style/Theme.LoudSpeak"
+        android:usesCleartextTraffic="true">
 
         <!-- B0/B1 验证期入口：主界面（含「系统自检」按钮）
              ⚠️ configChanges 必须声明：默认转屏会销毁重建 Activity，

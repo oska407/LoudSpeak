@@ -79,10 +79,16 @@ class SettingsActivity : LsActivity() {
 
     // 标注页
     private lateinit var swAnnot: Switch
-    private lateinit var swPron: Switch
-    private lateinit var swFiller: Switch
-    private lateinit var swMuzzy: Switch
-    private lateinit var swIssue: Switch
+    // 四层标注（标注多层次设计 v1）：每层独立可关
+    private lateinit var swL1: Switch          // L1 代词标红（红 + 下划线）
+    private lateinit var swL1Model: Switch     // L1 子：用大模型标代词（PC 判定关时置灰）
+    private lateinit var swL1Filler: Switch    // L1 子：也标口头禅（旧「口头禅」并入）
+    private lateinit var swL2: Switch          // L2 不完整句（橙下划线 + ⚠）
+    private lateinit var swL2Model: Switch     // L2 子：用大模型判（PC 判定关时置灰）
+    private lateinit var swL3: Switch          // L3 指代歧义（暗金 ?，模型专属）
+    private lateinit var swL4: Switch          // L4 更清楚的说法（蓝绿 →，模型专属）
+    private lateinit var seekAnnFont: SeekBar  // 标注字号 8..16sp
+    private lateinit var tvAnnFont: TextView
     private lateinit var btnEditPronouns: View
 
     // 外观页
@@ -103,6 +109,7 @@ class SettingsActivity : LsActivity() {
     private lateinit var tvNetStatus: TextView
     private lateinit var tvPcAddr: TextView
     private lateinit var rgNet: RadioGroup
+    private lateinit var rgLang: RadioGroup
     private lateinit var swPcJudge: Switch
 
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -194,6 +201,9 @@ class SettingsActivity : LsActivity() {
         }
         val idx = index.coerceIn(0, pages.size - 1)
         pages.forEachIndexed { i, v -> v.visibility = if (i == idx) View.VISIBLE else View.GONE }
+        // 切回标注页时刷新一次置灰：L3/L4 和 L1/L2 的「用大模型」都依赖 PcJudge，
+        // 而 PcJudge 是在「模型与通道」页开关的 —— 那边改了，这边要跟着变。
+        if (idx == 1) applyAnnotEnabled()
         val p = Skin.palette(this)
         for (i in tabViews.indices) {
             (tabViews[i].tag as? TextView)?.setTextColor(if (i == idx) p.accent else p.text2)
@@ -386,25 +396,50 @@ class SettingsActivity : LsActivity() {
 
     private fun bindMark() {
         swAnnot = findViewById(R.id.swAnnot)
-        swPron = findViewById(R.id.swPron)
-        swFiller = findViewById(R.id.swFiller)
-        swMuzzy = findViewById(R.id.swMuzzy)
-        swIssue = findViewById(R.id.swIssue)
+        swL1 = findViewById(R.id.swL1)
+        swL1Model = findViewById(R.id.swL1Model)
+        swL1Filler = findViewById(R.id.swL1Filler)
+        swL2 = findViewById(R.id.swL2)
+        swL2Model = findViewById(R.id.swL2Model)
+        swL3 = findViewById(R.id.swL3)
+        swL4 = findViewById(R.id.swL4)
+        seekAnnFont = findViewById(R.id.seekAnnFont)
+        tvAnnFont = findViewById(R.id.tvAnnFont)
         btnEditPronouns = findViewById(R.id.btnEditPronouns)
     }
 
     private fun initMark() {
         swAnnot.isChecked = Prefs.annotEnabled(this)
-        swPron.isChecked = Prefs.annotPronouns(this)
-        swFiller.isChecked = Prefs.annotFillers(this)
-        swMuzzy.isChecked = Prefs.annotMuzzy(this)
-        swIssue.isChecked = Prefs.annotIssues(this)
+        swL1.isChecked = Prefs.annotL1(this)
+        swL1Model.isChecked = Prefs.annotL1Model(this)
+        swL1Filler.isChecked = Prefs.annotL1Filler(this)
+        swL2.isChecked = Prefs.annotL2(this)
+        swL2Model.isChecked = Prefs.annotL2Model(this)
+        swL3.isChecked = Prefs.annotL3(this)
+        swL4.isChecked = Prefs.annotL4(this)
         applyAnnotEnabled()
         swAnnot.setOnCheckedChangeListener { _, v -> Prefs.setAnnotEnabled(this, v); applyAnnotEnabled() }
-        swPron.setOnCheckedChangeListener { _, v -> Prefs.setAnnotPronouns(this, v) }
-        swFiller.setOnCheckedChangeListener { _, v -> Prefs.setAnnotFillers(this, v) }
-        swMuzzy.setOnCheckedChangeListener { _, v -> Prefs.setAnnotMuzzy(this, v) }
-        swIssue.setOnCheckedChangeListener { _, v -> Prefs.setAnnotIssues(this, v) }
+        swL1.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL1(this, v); applyAnnotEnabled() }
+        swL1Model.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL1Model(this, v) }
+        swL1Filler.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL1Filler(this, v) }
+        swL2.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL2(this, v); applyAnnotEnabled() }
+        swL2Model.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL2Model(this, v) }
+        swL3.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL3(this, v) }
+        swL4.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL4(this, v) }
+
+        // 标注字号 8..16sp，默认 10（9 档）。作用于所有标注文字与符号
+        seekAnnFont.max = 8
+        val fs = Prefs.annotFontSizeSp(this)
+        seekAnnFont.progress = (fs - 8).coerceIn(0, 8)
+        tvAnnFont.text = "${fs}sp"
+        seekAnnFont.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun onChange(p: Int) {
+                val v = 8 + p
+                Prefs.setAnnotFontSizeSp(this@SettingsActivity, v)
+                tvAnnFont.text = "${v}sp"
+            }
+        })
+
         refreshPronounButton()
         btnEditPronouns.setOnClickListener { editPronounList() }
         findViewById<Button>(R.id.btnLegend).setOnClickListener {
@@ -416,13 +451,32 @@ class SettingsActivity : LsActivity() {
         }
     }
 
-    /** 主开关关掉时，四个子项灰掉（看得见但不能按，不能直接消失） */
+    /**
+     * 主开关关掉时，下面所有层灰掉（看得见但不能按，不能直接消失）。
+     * 另外：依赖 PC 判定的开关（L1/L2 的「用大模型」、L3、L4）在 PcJudge 没开时再灰一层
+     * —— 让她看得见有这个功能，也看得见为什么现在点不动。
+     */
     private fun applyAnnotEnabled() {
         val on = swAnnot.isChecked
-        for (v in listOf<View>(swPron, swFiller, swMuzzy, swIssue)) {
-            v.isEnabled = on
-            v.alpha = if (on) 1f else 0.4f
+        val pc = Prefs.pcJudgeEnabled(this)
+
+        fun gate(v: View, enabled: Boolean) {
+            v.isEnabled = enabled
+            v.alpha = if (enabled) 1f else 0.4f
         }
+
+        // 主开关关掉 → 整页灰掉（看得见，但按不动，不能直接消失）
+        for (v in listOf<View>(swL1, swL1Model, swL1Filler, swL2, swL2Model,
+            swL3, swL4, seekAnnFont, tvAnnFont)) {
+            gate(v, on)
+        }
+        // 父层关掉 → 它的子开关跟着灰掉
+        gate(swL1Model, on && swL1.isChecked && pc)
+        gate(swL1Filler, on && swL1.isChecked)
+        gate(swL2Model, on && swL2.isChecked && pc)
+        // 模型专属层：PcJudge 没开 → 灰掉（看得见有这功能，也看得见为什么点不动）
+        gate(swL3, on && pc)
+        gate(swL4, on && pc)
     }
 
     /** 按钮上顺手显示当前词表个数 */
@@ -435,9 +489,10 @@ class SettingsActivity : LsActivity() {
     /**
      * 编辑代词词表（方案 A）：一个填写窗口，每行一个词，可增删改。
      * 规则：
-     *  - "这个*" / "那个*" 这类带 * 的条目，会把「这个词开头的整段」都标成代词
-     *    （一直标到空白/标点），即「这个三角形 / 那个红色方块」整段提示换名字。
-     *  - 不带 * 的按原词精确匹配（如 这个、这样、那边）。
+     *  - 通配符：`?` = 一个字，`*` = 多个字（直到空白/标点）。
+     *    例如 `这?` 覆盖 这个/这些/这样/这边…， `那?` 覆盖 那个/那些/那样/那边…。
+     *  - `*` 在末尾会把「这个词开头的整段」都标成代词，即「这个三角形 / 那个红色方块」整段提示换名字。
+     *  - 不带通配符的按原词精确匹配（如 它、这边）。
      *  - 空行忽略；保存后实时判断与回放标注都用这一套。
      */
     private fun editPronounList() {
@@ -445,7 +500,7 @@ class SettingsActivity : LsActivity() {
         val edit = EditText(this).apply {
             setText(cur.joinToString("\n"))
             setSelection(text.length)
-            hint = "每行一个词，例如：\n这个*\n那个*\n这边\n那边"
+            hint = "每行一个词，支持通配符：\n这?\n那?\n这个*\n它"
             gravity = android.view.Gravity.TOP or android.view.Gravity.START
             minLines = 4
             maxLines = 10
@@ -454,7 +509,7 @@ class SettingsActivity : LsActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("编辑代词词表")
-            .setMessage("每行一个词，可增删改。\n带 * 的词（如 这个*）会把「这个X / 那个X」整段标红；不带 * 按原词精确匹配。空行忽略。")
+            .setMessage("每行一个词，可增删改。\n通配符：? = 一个字，* = 多个字。\n例：这? 覆盖 这个/这些/这样…；这个* 把「这个X」整段标红；它 按原词精确匹配。空行忽略。")
             .setView(edit)
             .setNegativeButton("取消", null)
             .setNeutralButton("恢复默认") { _, _ ->
@@ -763,6 +818,7 @@ class SettingsActivity : LsActivity() {
         tvPcAddr = findViewById(R.id.tvPcAddr)
         rgNet = findViewById(R.id.rgNet)
         swPcJudge = findViewById(R.id.swPcJudge)
+        rgLang = findViewById(R.id.rgLang)
     }
 
     private fun initModel() {
@@ -807,6 +863,22 @@ class SettingsActivity : LsActivity() {
                 else -> 0
             })
             refreshNet()
+        }
+
+        rgLang.check(when (Prefs.asrLangMode(this)) {
+            Prefs.ASR_LANG_EN -> R.id.rbLangEn
+            Prefs.ASR_LANG_AUTO -> R.id.rbLangAuto
+            Prefs.ASR_LANG_RAW -> R.id.rbLangRaw
+            else -> R.id.rbLangZh
+        })
+        rgLang.setOnCheckedChangeListener { _, id ->
+            Prefs.setAsrLangMode(this, when (id) {
+                R.id.rbLangEn -> Prefs.ASR_LANG_EN
+                R.id.rbLangAuto -> Prefs.ASR_LANG_AUTO
+                R.id.rbLangRaw -> Prefs.ASR_LANG_RAW
+                else -> Prefs.ASR_LANG_ZH
+            })
+            Toast.makeText(this, "识别语言已切换，下一段开始生效", Toast.LENGTH_SHORT).show()
         }
         findViewById<Button>(R.id.btnPcIp).setOnClickListener {
             val input = EditText(this).apply {

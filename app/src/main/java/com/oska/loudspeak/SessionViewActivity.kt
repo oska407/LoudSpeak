@@ -95,12 +95,16 @@ class SessionViewActivity : LsActivity() {
         // 标注文字（和录音时一致）
         val sentences = store.loadSentences(dir)
         val chapters = (sentences.maxOfOrNull { it.tEndMs } ?: 0L) / 60000
+        val annPrefs = Prefs.annotationPrefs(this@SessionViewActivity)
         val tv = TextView(this).apply {
-            text = Annotator.build(sentences, chapters.toInt(), Prefs.annotationPrefs(this@SessionViewActivity))
+            text = Annotator.build(sentences, chapters.toInt(), annPrefs)
             textSize = 18f; setTextColor(0xFFDCE3E8.toInt())
             setLineSpacing(8f * resources.displayMetrics.density, 1.0f)
             setPadding(0, pad / 2, 0, pad / 2)
         }
+        // 回放页也允许点句末的「→」看更清楚的说法
+        Annotator.onRewriteToggle = { tv.text = Annotator.build(sentences, chapters.toInt(), annPrefs) }
+        Annotator.attachInteraction(tv, annPrefs)
         val sc = ScrollView(this).apply { addView(tv) }
         root.addView(sc, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 

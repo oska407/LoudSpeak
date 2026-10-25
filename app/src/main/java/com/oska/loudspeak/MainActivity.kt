@@ -138,7 +138,6 @@ class MainActivity : LsActivity() {
     private var state = "idle" // idle / recording / paused / replay / diag
     private var asrLoading = false
     private var lastGlowAt = 0L
-    private var prompted10Min = false
     /** 过热提示（每会话一次，非阻断） */
     private var promptedHot = false
 
@@ -439,7 +438,6 @@ class MainActivity : LsActivity() {
     private fun startRecording() {
         sessionStartedAt = System.currentTimeMillis()
         chaptersDrawn = 0
-        prompted10Min = false
         promptedHot = false
         take = 1
         prevTakePronouns = 0
@@ -480,19 +478,6 @@ class MainActivity : LsActivity() {
                     // 章节标记每 60 秒（§12.2 步 5）
                     val chapter = ((audio?.elapsedMs() ?: 0) / 60000).toInt()
                     if (chapter > chaptersDrawn) { chaptersDrawn = chapter; renderAll() }
-                    // 连续录满 10 分钟：非阻断提示，不自动停（§13.2 措施 4）
-                    if (!prompted10Min && (audio?.elapsedMs() ?: 0) >= 10 * 60_000L) {
-                        prompted10Min = true
-                        // §13.2 措施 5（前 4 条见 startRecording 的亮度/刷新率锁与 ASR 线程数 2）：
-                        // 温度角标已经取消，温度就随这次提示带出来。
-                        val t = batteryTempC()
-                        val tail = if (t != null) " · 现在 $t℃" else ""
-                        AlertDialog.Builder(this)
-                            .setMessage("已录 10 分钟$tail，要不要先停一下？")
-                            .setPositiveButton("继续录", null)
-                            .setNeutralButton("先停下") { _, _ -> onStopBtn(emotional = false) }
-                            .show()
-                    }
                     // 太热了单独弹一次（非阻断，每会话一次）：热降频会把出字从 1–2s 拉长到 3–5s，
                     // 那时候「文字跟不上说话」，练的体验就崩了（§16 R10）。
                     if (!promptedHot && (audio?.elapsedMs() ?: 0) >= 3 * 60_000L) {
@@ -748,6 +733,18 @@ class MainActivity : LsActivity() {
     // ================= ASR 结果 → 显示（§12.2 步 3–4） =================
 
     private fun onAsrResult(res: AsrResult?, t0: Long, t1: Long) {
+        // 识别语言档位（§ASR）：非「自动」时，只留目标语种，其余整句丢弃。
+        // 解码始终走自动（AsrEngine.language=""），保证检测到的语种可信；这里只按设置过滤。
+        // 设成中文却说了英文 → 那句英文被直接丢弃（不显示、也不显示乱码），中文句正常。
+        if (res != null) {
+            val lm = Prefs.asrLangMode(this)
+            val drop = when (lm) {
+                Prefs.ASR_LANG_RAW -> false   // 自动：识别什么就什么，不过滤
+                Prefs.ASR_LANG_AUTO -> res.lang != Prefs.ASR_LANG_ZH && res.lang != Prefs.ASR_LANG_EN
+                else -> res.lang != lm
+            }
+            if (drop) return
+        }
         val text = res?.text
         val s = RuleEngine.Sentence(
             index = sentences.size, tStartMs = t0, tEndMs = t1,
@@ -801,7 +798,12 @@ class MainActivity : LsActivity() {
 
     private fun renderAll() {
         // 标注体系（§R9）：色彩 + 符号，全部走 Annotator，开关来自设置
-        textArea.setContent(Annotator.build(sentences, chaptersDrawn, Prefs.annotationPrefs(this), lastFluency))
+        val p = Prefs.annotationPrefs(this)
+        // 点句末的「→」展开/收起 L4 改写后，走同一条路径重画
+        Annotator.onRewriteToggle = { renderAll() }
+        textArea.setContent(Annotator.build(sentences, chaptersDrawn, p, lastFluency))
+        // 只有开了 L4 才挂 LinkMovementMethod（文本里才有可点的「→」）
+        Annotator.attachInteraction(textArea, p)
     }
 
     /** 「整句」卡显示 说得完整的句数 / 总句数，后面那半用小一号灰字 */

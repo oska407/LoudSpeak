@@ -112,16 +112,60 @@ object Prefs {
     fun annotIssues(ctx: Context): Boolean = sp(ctx).getBoolean("annotIssues", true)
     fun setAnnotIssues(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotIssues", v).apply()
 
+    // ---- 四层标注（标注多层次设计 v1）：L1 代词 / L2 不完整句 / L3 指代歧义 / L4 更清楚的说法 ----
+    // 每层独立可关。L1/L2 有「用大模型」子开关；L3/L4 模型专属，PcJudge 关时设置页置灰。
+    fun annotL1(ctx: Context): Boolean = sp(ctx).getBoolean("annotL1", true)
+    fun setAnnotL1(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL1", v).apply()
+
+    /** L1 子开关：用大模型标代词，代替本地词表（PcJudge 关时设置页置灰） */
+    fun annotL1Model(ctx: Context): Boolean = sp(ctx).getBoolean("annotL1Model", false)
+    fun setAnnotL1Model(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL1Model", v).apply()
+
+    /** L1 子开关：也标口头禅（旧「口头禅」并入 L1，灰字 + 下划线） */
+    fun annotL1Filler(ctx: Context): Boolean = sp(ctx).getBoolean("annotL1Filler", true)
+    fun setAnnotL1Filler(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL1Filler", v).apply()
+
+    fun annotL2(ctx: Context): Boolean = sp(ctx).getBoolean("annotL2", true)
+    fun setAnnotL2(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL2", v).apply()
+
+    /** L2 子开关：用大模型判不完整句（PcJudge 关时设置页置灰） */
+    fun annotL2Model(ctx: Context): Boolean = sp(ctx).getBoolean("annotL2Model", false)
+    fun setAnnotL2Model(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL2Model", v).apply()
+
+    /** L3 指代歧义（暗金 ?）：模型专属，默认关 */
+    fun annotL3(ctx: Context): Boolean = sp(ctx).getBoolean("annotL3", false)
+    fun setAnnotL3(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL3", v).apply()
+
+    /** L4 更清楚的说法（蓝绿 →，点按才展开改写小字）：模型专属，默认关 */
+    fun annotL4(ctx: Context): Boolean = sp(ctx).getBoolean("annotL4", false)
+    fun setAnnotL4(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotL4", v).apply()
+
+    /** 标注字号（sp）：作用于所有标注文字与符号，8..16，默认 10 */
+    fun annotFontSizeSp(ctx: Context): Int = sp(ctx).getInt("annotFontSizeSp", 10)
+    fun setAnnotFontSizeSp(ctx: Context, v: Int) =
+        sp(ctx).edit().putInt("annotFontSizeSp", v.coerceIn(8, 16)).apply()
+
     /**
-     * 默认代词词表（§8.1 / R9）：可在设置里编辑。
-     * - 在「这个 / 那个」后加 *（写成 "这个*" / "那个*"）表示「这个词开头的整段都算代词」，
-     *   一直标到空白或标点为止 —— 把「这个三角形」整段提示换成名字（用户要求的「这个X / 那个X」）。
-     * - 其余为完整指代词，按原词精确匹配。
+     * 本次要送进 /judge 的四层门控：只含「开关开着 **且** 需要模型算」的层。
+     * 关掉的层不送 —— 省 PC 端 token 与延时，也不会把用户关掉的东西算出来。
+     * 返回 null 表示一层都不需要模型，App 不必发请求。
+     */
+    fun judgeLevels(ctx: Context): Map<String, Boolean>? {
+        val pc = pcJudgeEnabled(ctx)
+        val l1 = annotL1(ctx) && annotL1Model(ctx) && pc
+        val l2 = annotL2(ctx) && annotL2Model(ctx) && pc
+        val l3 = annotL3(ctx) && pc
+        val l4 = annotL4(ctx) && pc
+        if (!l1 && !l2 && !l3 && !l4) return null
+        return mapOf("pronoun" to l1, "incomplete" to l2, "ambiguity" to l3, "rewrite" to l4)
+    }
+
+    /**
+     * 默认代词词表（§8.1 / R9）：可在设置里编辑。通配符：? = 一个字，* = 多个字（直到空白/标点）。
+     * 出厂默认用 `这?` / `那?` 两个就覆盖所有「这/那 + 一个字」的指代词，用户可增删。
      * 「原有字」= 出厂这套，默认就是它，用户在设置里可增删。
      */
-    val DEFAULT_PRONOUNS = listOf(
-        "这个*", "那个*", "这些", "那些", "这样", "那样", "这边", "那边", "它"
-    )
+    val DEFAULT_PRONOUNS = listOf("这?", "那?")
 
     /** 代词词表（可编辑）。首次读会自动写回默认，保证后续稳定 */
     fun pronounList(ctx: Context): List<String> {
@@ -138,15 +182,38 @@ object Prefs {
     /** 一键恢复出厂代词词表 */
     fun resetPronounList(ctx: Context) = setPronounList(ctx, DEFAULT_PRONOUNS)
 
-    /** 一次性读出整套标注偏好 */
+    // ---- 识别语言（§ASR）：中文 / 英文 / 中文和英文 / 自动 ----
+    const val ASR_LANG_ZH = "zh"      // 只保留中文句，英文句整句丢弃
+    const val ASR_LANG_EN = "en"      // 只保留英文句，中文句整句丢弃
+    const val ASR_LANG_AUTO = "auto"  // 中英混（自动），只留 zh/en，其余丢弃
+    const val ASR_LANG_RAW = "all"    // 自动：识别什么就什么，不过滤任何语种
+    /** 识别语言档位，默认中文（用户要求；默认中文后说英文会被丢弃，不显示乱码） */
+    fun asrLangMode(ctx: Context): String =
+        sp(ctx).getString("asrLangMode", ASR_LANG_ZH) ?: ASR_LANG_ZH
+    fun setAsrLangMode(ctx: Context, v: String) =
+        sp(ctx).edit().putString("asrLangMode", v).apply()
+
+    /**
+     * 一次性读出整套标注偏好。
+     * 四层（annotL1..L4）是新的权威开关；旧的 pronouns/fillers/issues 由四层推导，
+     * 这样老引擎（Annotation.kt）不用改就立刻服从新开关，不会出现「两层打架」。
+     */
     fun annotationPrefs(ctx: Context): AnnotationPrefs =
         AnnotationPrefs(
             enabled = annotEnabled(ctx),
-            pronouns = annotPronouns(ctx),
-            fillers = annotFillers(ctx),
-            issues = annotIssues(ctx),
-            muzzy = annotMuzzy(ctx),
-            pronounList = pronounList(ctx)
+            pronouns = annotL1(ctx),
+            fillers = annotL1(ctx) && annotL1Filler(ctx),
+            issues = annotL2(ctx),
+            // 旧「模糊词」本地词表已并入 L3（改由模型判），本地那份不再单独生效
+            muzzy = false,
+            pronounList = pronounList(ctx),
+            l1 = annotL1(ctx),
+            l1Model = annotL1Model(ctx),
+            l2 = annotL2(ctx),
+            l2Model = annotL2Model(ctx),
+            l3 = annotL3(ctx),
+            l4 = annotL4(ctx),
+            fontSizeSp = annotFontSizeSp(ctx)
         )
 
     /** 模糊词标注（跟 L2 一起开，默认关） */

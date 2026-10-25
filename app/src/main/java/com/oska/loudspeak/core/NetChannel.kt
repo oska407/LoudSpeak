@@ -10,12 +10,11 @@ import java.net.URL
  * 设计里 PC 是「增强」不是「依赖」：通了走 GPU 大模型，不通立刻回本地小模型，
  * 所以这里只负责三件事：**选哪条路 / 探活 / 说清现在走的是哪条**。
  *
- * ⚠️ 现在 App **没有申请 INTERNET 权限**（为了守住「完全离线、数据不出手机」这句承诺，
- * 见 AndroidManifest 注释）。因此：
- *  - 三个选项（自动 / 仅本地 / 仅 PC）都能存下来、能显示；
- *  - `probe()` 在有权限之前一定返回 null（SecurityException 被吞掉），
- *    自动挡于是永远落到本地 —— 行为与之前完全一致，不会出现「悄悄联网」；
- *  - 等 PC 批次真正接入时，只需在 Manifest 加 INTERNET，这里不用改。
+ * 联网仅用于「局域网 PC 判定桥」（§R9）：Manifest 已声明 INTERNET 权限并放行明文
+ * http://（usesCleartextTraffic=true，因为家里 PC 的 judge/asr 服务是 http 而非 https）。
+ * 但仍严格守住「默认不联网」：开关 pcJudgeEnabled 默认 false，关着时本类不会被调用、
+ * 任何代码路径都不发网络请求；只有用户明确打开开关、且家里 PC 起了对应服务才走局域网。
+ * 任一环节失败（无网 / 超时 / 服务没起 / 返回非 JSON）→ 上层回退本地规则，不会卡住。
  */
 object NetChannel {
     const val AUTO = 0

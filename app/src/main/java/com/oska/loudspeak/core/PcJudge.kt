@@ -44,21 +44,38 @@ object PcJudge {
      */
     fun judge(ctx: Context, sentences: List<RuleEngine.Sentence>): String? {
         if (!Prefs.pcJudgeEnabled(ctx)) return null
+        val levels = Prefs.judgeLevels(ctx) ?: return null
         val ip = Prefs.pcIp(ctx).takeIf { it.isNotBlank() } ?: return null
         val body = try {
             JSONObject().apply {
                 put("sentences", JSONArray().apply {
                     sentences.forEach { put(JSONObject().put("idx", it.index).put("text", it.text)) }
                 })
+                put("levels", JSONObject().apply { levels.forEach { (k, v) -> put(k, v) } })
             }.toString()
         } catch (e: Exception) { return null }
 
         return try {
             val resp = post(ip, Prefs.pcJudgePort(ctx), body)
-            QwenJudge.parseLlm(resp, sentences)   // 按约定的 JSON 契约解析
+            val summary = QwenJudge.parseLlm(resp, sentences)   // 按约定的 JSON 契约解析
+            syncModelPronouns(ctx, sentences)
+            summary
         } catch (e: Throwable) {
             CrashReporter.report("warn", "PC 判定桥回退规则：${e.message?.take(120)}", e)
             null
+        }
+    }
+
+    /**
+     * L1 选了「用大模型标代词」时，把模型判的代词同步回 s.pronouns，
+     * 让计数 / 诊断 / 追问跟屏幕上看到的高亮用同一套来源（不然会出现「标了 3 处、计数说 1 处」）。
+     */
+    private fun syncModelPronouns(ctx: Context, sentences: List<RuleEngine.Sentence>) {
+        if (!Prefs.annotL1(ctx) || !Prefs.annotL1Model(ctx)) return
+        for (s in sentences) {
+            val mp = s.modelPronouns ?: continue
+            s.pronouns.clear()
+            RuleEngine.locatePronouns(s.text, mp.map { it.word }).forEach { s.pronouns.add(it) }
         }
     }
 

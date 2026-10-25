@@ -93,13 +93,32 @@ object QwenJudge {
                 val o = arr.getJSONObject(i)
                 val idx = o.optInt("idx", -1)
                 val s = byIndex[idx] ?: continue
-                val flags = o.optJSONArray("flags") ?: continue
-                // 清掉旧的结构性标记（代词/口头禅不在 flags 里，不受影响），填模型判的
-                s.flags.removeAll(STRUCT_FLAGS)
-                for (j in 0 until flags.length()) {
-                    val f = flags.optString(j)
-                    if (f in STRUCT_FLAGS) s.flags.add(f)
+                // flags 是可选的：只有开了「L2 用大模型」服务端才给（levels 门控）
+                val flags = o.optJSONArray("flags")
+                if (flags != null) {
+                    // 清掉旧的结构性标记（代词/口头禅不在 flags 里，不受影响），填模型判的
+                    s.flags.removeAll(STRUCT_FLAGS)
+                    for (j in 0 until flags.length()) {
+                        val f = flags.optString(j)
+                        if (f in STRUCT_FLAGS) s.flags.add(f)
+                    }
                 }
+                // L1 大模型 / L3：代词原文 + 是否歧义。
+                // 注意只认原文，位置由 App 端子串定位 —— 让模型数字符下标它数不准。
+                val pr = o.optJSONArray("pronouns")
+                if (pr != null) {
+                    val list = ArrayList<RuleEngine.ModelPronoun>()
+                    for (j in 0 until pr.length()) {
+                        val p = pr.optJSONObject(j) ?: continue
+                        val w = p.optString("text", "").trim()
+                        if (w.isEmpty()) continue
+                        list.add(RuleEngine.ModelPronoun(w, p.optBoolean("ambiguous", false)))
+                    }
+                    s.modelPronouns = list
+                }
+                // L4：更清楚的说法 + 语境化追问（非空才覆盖，空串不抹掉规则追问）
+                o.optString("rewrite", "").trim().takeIf { it.isNotEmpty() }?.let { s.rewrite = it }
+                o.optString("followup", "").trim().takeIf { it.isNotEmpty() }?.let { s.modelFollowUp = it }
             }
         }.onFailure { return null }
 
