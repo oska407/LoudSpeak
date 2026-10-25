@@ -8,6 +8,7 @@ import android.text.method.LinkMovementMethod
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ClickableSpan
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 
 /**
@@ -33,10 +34,19 @@ object Annotator {
 
     /**
      * 只有开了 L4（文本里才有可点的「→」）才挂 LinkMovementMethod，
-     * 没开时保持 TextView 原样 —— 零副作用，不碰别的手势。
+     * 没开时保持原样 —— 零副作用，不碰别的手势。
+     * 参数收 View（不是 TextView）：主界面 WritingTextArea 是容器，内部才是 TextView。
      */
-    fun attachInteraction(tv: TextView, prefs: AnnotationPrefs) {
+    fun attachInteraction(v: View, prefs: AnnotationPrefs) {
+        val tv = findTextView(v) ?: return
         tv.movementMethod = if (prefs.enabled && prefs.l4) LinkMovementMethod.getInstance() else null
+    }
+
+    /** 递归找第一个 TextView：主界面的 WritingTextArea 是容器，回放页本身就是 TextView。 */
+    private fun findTextView(v: View): TextView? = when (v) {
+        is TextView -> v
+        is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { findTextView(v.getChildAt(it)) }
+        else -> null
     }
 
     /** 给 [st, sb.length) 上色，并把字号压到标注字号（设置里 8..16sp，默认 10）。 */
