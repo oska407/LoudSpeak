@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # 允许创建 Release（APK 免登录下载）
+      contents: write   # 允许创建 Release（APK 免登录直链下载）
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +20,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
 
-      # 手动安装 Android SDK（不依赖已失效的 android-actions/setup-android@v3）
+      # 手动安装 Android SDK（不依赖第三方有失效风险的 android-actions/setup-android@v3）
       - name: Setup Android SDK
         run: |
           export ANDROID_HOME=$HOME/android-sdk
@@ -59,13 +59,26 @@ jobs:
           name: loudspeak-debug-apk
           path: app/build/outputs/apk/debug/*.apk
 
-      # 同时发成 Release，附件免登录直链下载（沙箱/无需 token 的场景可拉）
+      # 主通道：Release（免登录直链下载）
       - name: Publish APK to Release
         if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: debug-latest
+          name: Debug APK (latest)
+          body: CI 自动编译的最新调试包，直接下载安装即可
+          files: app/build/outputs/apk/debug/*.apk
+          overwrite_files: true
+
+      # 兜底通道：把 APK 推到 apk 分支（公开仓库可匿名 git 拉取）
+      - name: Publish APK to apk branch
+        if: always() && hashFiles('app/build/outputs/apk/debug/*.apk') != ''
         run: |
-          gh release delete debug-latest --yes --cleanup-tag || true
-          gh release create debug-latest app/build/outputs/apk/debug/*.apk \
-            --title "Debug APK (latest)" \
-            --notes "CI 自动编译的最新调试包，直接下载安装即可"
+          set -e
+          mkdir -p /tmp/apkpub
+          cp app/build/outputs/apk/debug/*.apk /tmp/apkpub/app-debug.apk
+          cd /tmp/apkpub
+          git init -q -b apk
+          git add -A
+          git -c user.name=ci -c user.email=ci@local commit -q -m "apk $(date -u +%Y%m%d-%H%M)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" apk
