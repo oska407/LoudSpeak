@@ -38,10 +38,13 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # 关键：pipefail —— 否则 tee 会把 gradle 的失败退出码吃掉，编译失败也显示 success
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
 
-      # 失败时把错误尾部写进运行摘要（无需登录即可在 run 页面读到）
+      # 失败时把错误尾部写进运行摘要
       - name: Write error tail to summary
         if: failure()
         run: |
@@ -50,7 +53,7 @@ jobs:
             echo '```'
             tail -150 build.log
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: Upload APK
         if: success()
@@ -58,6 +61,7 @@ jobs:
         with:
           name: loudspeak-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
       # 主通道：Release（免登录直链下载）
       - name: Publish APK to Release
@@ -70,15 +74,17 @@ jobs:
           files: app/build/outputs/apk/debug/*.apk
           overwrite_files: true
 
-      # 兜底通道：把 APK 推到 apk 分支（公开仓库可匿名 git 拉取）
+      # 兜底/诊断通道：无论成败都把 APK 和 build.log 推到 apk 分支
+      # （公开仓库可匿名 git 拉取；这样没有 token 也能取产物、看编译错误）
       - name: Publish APK to apk branch
-        if: always() && hashFiles('app/build/outputs/apk/debug/*.apk') != ''
+        if: always()
         run: |
-          set -e
           mkdir -p /tmp/apkpub
-          cp app/build/outputs/apk/debug/*.apk /tmp/apkpub/app-debug.apk
+          cp build.log /tmp/apkpub/build.log 2>/dev/null || true
+          cp app/build/outputs/apk/debug/*.apk /tmp/apkpub/ 2>/dev/null || true
+          ls -la /tmp/apkpub || true
           cd /tmp/apkpub
           git init -q -b apk
           git add -A
-          git -c user.name=ci -c user.email=ci@local commit -q -m "apk $(date -u +%Y%m%d-%H%M)"
+          git -c user.name=ci -c user.email=ci@local commit -q -m "build $(date -u +%Y%m%d-%H%M)" || true
           git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" apk
