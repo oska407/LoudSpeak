@@ -67,6 +67,56 @@
                 android:text="授予「所有文件访问」权限（扫 Download 用）" />
         </LinearLayout>
 
+        <TextView style="@style/SetSection" android:text="说话人声纹（可选）" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                android:id="@+id/tvSpkStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingMultiplier="1.35"
+                android:paddingTop="12dp"
+                android:paddingBottom="6dp"
+                android:textColor="@color/s_text"
+                android:textSize="13sp" />
+
+            <View style="@style/SetDivider" />
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:paddingBottom="6dp"
+                android:text="用来区分「这句话是谁说的」。把声纹模型（.onnx）拷到上面显示的目录，再点下面加载。fp16 约 14MB、int8 约 8MB。加载只做校验，不会动录音。" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSpkLoad"
+                style="@style/SetBtn"
+                android:text="加载 / 校验声纹模型" />
+
+            <View style="@style/SetDivider" />
+
+            <TextView
+                android:id="@+id/tvSpkList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingMultiplier="1.35"
+                android:paddingTop="12dp"
+                android:paddingBottom="6dp"
+                android:textColor="@color/s_text"
+                android:textSize="13sp" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSpkAdd"
+                style="@style/SetBtn"
+                android:text="＋ 添加声纹（录 6 秒）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSpkManage"
+                style="@style/SetBtn"
+                android:text="管理已登记的声纹（改名 / 删除）" />
+        </LinearLayout>
+
         <TextView style="@style/SetSection" android:text="识别语言" />
 
         <LinearLayout style="@style/SetCard">

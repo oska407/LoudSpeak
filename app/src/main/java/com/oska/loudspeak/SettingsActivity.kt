@@ -1,7 +1,10 @@
 package com.oska.loudspeak
 
+import android.Manifest
 import android.app.Activity
+import android.app.ProgressDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.text.SpannableString
@@ -28,7 +31,11 @@ import com.oska.loudspeak.core.NetChannel
 import com.oska.loudspeak.core.PcJudge
 import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.RuleEngine
+import com.oska.loudspeak.core.SampleRecorder
 import com.oska.loudspeak.core.SessionStore
+import com.oska.loudspeak.core.SpeakerEngine
+import com.oska.loudspeak.core.SpeakerProfile
+import com.oska.loudspeak.core.SpeakerProfileStore
 import com.oska.loudspeak.core.Skin
 import com.oska.loudspeak.core.Ui
 import java.io.File
@@ -111,6 +118,13 @@ class SettingsActivity : LsActivity() {
     private lateinit var rgNet: RadioGroup
     private lateinit var rgLang: RadioGroup
     private lateinit var swPcJudge: Switch
+    // 说话人声纹（可选）
+    private lateinit var tvSpkStatus: TextView
+    private lateinit var tvSpkList: TextView
+    private lateinit var btnSpkLoad: View
+    private lateinit var btnSpkAdd: View
+    private lateinit var btnSpkManage: View
+    private val REQ_REC_AUDIO = 4321
 
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
@@ -143,6 +157,7 @@ class SettingsActivity : LsActivity() {
         refreshStorage()
         refreshLevel()
         refreshNet()
+        refreshSpkStatus()
     }
 
     // ================= 标签 =================
@@ -819,6 +834,11 @@ class SettingsActivity : LsActivity() {
         rgNet = findViewById(R.id.rgNet)
         swPcJudge = findViewById(R.id.swPcJudge)
         rgLang = findViewById(R.id.rgLang)
+        tvSpkStatus = findViewById(R.id.tvSpkStatus)
+        tvSpkList = findViewById(R.id.tvSpkList)
+        btnSpkLoad = findViewById(R.id.btnSpkLoad)
+        btnSpkAdd = findViewById(R.id.btnSpkAdd)
+        btnSpkManage = findViewById(R.id.btnSpkManage)
     }
 
     private fun initModel() {
@@ -927,6 +947,10 @@ class SettingsActivity : LsActivity() {
         findViewById<Button>(R.id.btnErr).setOnClickListener {
             startActivity(Intent(this, ErrorsActivity::class.java))
         }
+        btnSpkLoad.setOnClickListener { loadSpeakerDialog() }
+        btnSpkAdd.setOnClickListener { addSpeakerFlow() }
+        btnSpkManage.setOnClickListener { manageSpeakers() }
+        refreshSpkStatus()
         refreshNet()
     }
 
@@ -980,6 +1004,165 @@ class SettingsActivity : LsActivity() {
             append("ASR 词表　").append(if (t?.isFile == true) "✓" else "✗ 缺").append("\n\n")
             append("识别与判分全部在手机本地完成，不需要也不加载任何大模型。缺什么就补上面那一两种文件，其它都不用管。")
         }
+    }
+
+    // ---- 说话人声纹（可选）：加载 / 校验 ----
+
+    private fun refreshSpkStatus() {
+        if (!::tvSpkStatus.isInitialized) return
+        val eng = SpeakerEngine(Prefs.modelsDir(this))
+        val dir = eng.spkDir()
+        val models = eng.findModels()
+        tvSpkStatus.text = if (models.isEmpty()) buildString {
+            append("没找到声纹模型。把 .onnx 拷到：\n")
+            append(dir.absolutePath).append('\n')
+            append("（fp16 约 14MB / int8 约 8MB；拷完点下面加载）")
+        } else buildString {
+            append("spk/ 里有 ").append(models.size).append(" 个模型：\n")
+            models.forEach { append("· ").append(it.name).append("（").append(it.length() / 1_000_000).append("MB）\n") }
+            append("\n点下面「加载」选一个，只验证能否加载与推理。")
+        }
+        if (::tvSpkList.isInitialized) {
+            val profiles = SpeakerProfileStore(Prefs.modelsDir(this)).load()
+            tvSpkList.text = if (profiles.isEmpty()) "已登记声纹：还没有"
+            else "已登记声纹（${profiles.size}）：" + profiles.joinToString("、") { it.name }
+        }
+    }
+
+    private fun loadSpeakerDialog() {
+        val eng = SpeakerEngine(Prefs.modelsDir(this))
+        val files = eng.findModels()
+        if (files.isEmpty()) {
+            Toast.makeText(this, "spk/ 下没有 .onnx，先把模型拷进去", Toast.LENGTH_LONG).show()
+            refreshSpkStatus(); return
+        }
+        val labels = files.map { "${it.name}（${it.length() / 1_000_000}MB）" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("选一个声纹模型加载")
+            .setItems(labels) { _, which -> doLoadSpeaker(files[which]) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun doLoadSpeaker(f: File) {
+        tvSpkStatus.text = "加载并试算中…（${f.name}）"
+        asrExecutor.execute {
+            val eng = SpeakerEngine(Prefs.modelsDir(this))
+            val ok = eng.load(f)
+            val statusMsg = eng.status
+            val dimv = eng.dim
+            val (tok, tmsg) = if (ok) eng.selfTest() else (false to "")
+            eng.release()
+            runOnUiThread {
+                tvSpkStatus.text = when {
+                    !ok -> "✗ $statusMsg"
+                    tok -> "✓ 加载成功：${f.name}\n$tmsg\n（下一步才会接入录音区分）"
+                    else -> "✓ 已加载 ${f.name}（${dimv} 维），但$tmsg"
+                }
+                Toast.makeText(this,
+                    if (ok && tok) "声纹模型可用 ✓" else if (ok) "已加载，但试算未通过" else "加载失败，详情见上方",
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun addSpeakerFlow() {
+        val input = EditText(this).apply { hint = "给这个人起个名字（如 爸爸 / 妈妈 / A）" }
+        AlertDialog.Builder(this)
+            .setTitle("添加声纹（录 6 秒）")
+            .setMessage("让对方对着手机正常说话几秒。名字随便起，用来在文字前标「名字：」。")
+            .setView(input)
+            .setPositiveButton("开始录音") { _, _ ->
+                val name = input.text.toString().trim().ifEmpty { "未命名" }
+                startEnroll(name)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun startEnroll(name: String) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_REC_AUDIO)
+            Toast.makeText(this, "先授权麦克风，再点一次「添加声纹」", Toast.LENGTH_LONG).show()
+            return
+        }
+        val secs = 6
+        val pd = ProgressDialog(this).apply {
+            setMessage("正在录【$name】… 还剩 $secs 秒\n请让 TA 正常说话")
+            setCancelable(false)
+            show()
+        }
+        asrExecutor.execute {
+            val eng = SpeakerEngine(Prefs.modelsDir(this))
+            if (!eng.loadFirst()) {
+                val st = eng.status
+                eng.release()
+                runOnUiThread { pd.dismiss(); Toast.makeText(this, "先加载声纹模型：$st", Toast.LENGTH_LONG).show() }
+                return@execute
+            }
+            val pcm = SampleRecorder.record(secs) { left ->
+                runOnUiThread { if (pd.isShowing) pd.setMessage("正在录【$name】… 还剩 $left 秒\n请让 TA 正常说话") }
+            }
+            val emb = eng.embed(pcm)
+            eng.release()
+            if (emb == null) {
+                runOnUiThread { pd.dismiss(); tvSpkStatus.text = "✗ 声纹提取失败（录音太短/太静？）" }
+                return@execute
+            }
+            val ok = SpeakerProfileStore(Prefs.modelsDir(this)).add(name, emb)
+            runOnUiThread {
+                pd.dismiss()
+                if (ok) {
+                    Toast.makeText(this, "已添加声纹：$name", Toast.LENGTH_SHORT).show()
+                    refreshSpkStatus()
+                } else tvSpkStatus.text = "✗ 保存失败（可能和已登记的模型维度不一致，换回同一个模型再录）"
+            }
+        }
+    }
+
+    private fun manageSpeakers() {
+        val store = SpeakerProfileStore(Prefs.modelsDir(this))
+        val list = store.load()
+        if (list.isEmpty()) { Toast.makeText(this, "还没有登记声纹", Toast.LENGTH_SHORT).show(); return }
+        val names = list.map { it.name }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("已登记声纹（点一个改名或删除）")
+            .setItems(names) { _, which -> speakerActions(list[which]) }
+            .setNegativeButton("关闭", null)
+            .show()
+    }
+
+    private fun speakerActions(p: SpeakerProfile) {
+        AlertDialog.Builder(this)
+            .setTitle(p.name)
+            .setItems(arrayOf("改名", "删除")) { _, which ->
+                when (which) {
+                    0 -> renameSpeaker(p)
+                    1 -> {
+                        SpeakerProfileStore(Prefs.modelsDir(this)).remove(p.id)
+                        Toast.makeText(this, "已删除：${p.name}", Toast.LENGTH_SHORT).show()
+                        refreshSpkStatus()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun renameSpeaker(p: SpeakerProfile) {
+        val input = EditText(this).apply { setText(p.name) }
+        AlertDialog.Builder(this)
+            .setTitle("改名")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val n = input.text.toString().trim()
+                if (n.isNotEmpty()) {
+                    SpeakerProfileStore(Prefs.modelsDir(this)).rename(p.id, n)
+                    refreshSpkStatus()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 扫描常见位置：把候选 ASR（onnx + tokens）列出来，选一个装一个 */
