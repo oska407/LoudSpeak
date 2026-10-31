@@ -1,0 +1,84 @@
+Fetching distribution.
+Downloading https://services.gradle.org/distributions/gradle-8.9-bin.zip
+............10%.............20%.............30%.............40%.............50%.............60%.............70%.............80%.............90%.............100%
+
+Welcome to Gradle 8.9!
+
+Here are the highlights of this release:
+ - Enhanced Error and Warning Messages
+ - IDE Integration Improvements
+ - Daemon JVM Information
+
+For more details see https://docs.gradle.org/8.9/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:dataBindingMergeDependencyArtifactsDebug
+> Task :app:generateDebugResValues
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:parseDebugLocalResources
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:processDebugMainManifest
+> Task :app:mergeDebugResources
+> Task :app:processDebugManifest
+> Task :app:dataBindingGenBaseClassesDebug
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:mergeDebugStartupProfile
+> Task :app:mergeDebugJniLibFolders
+> Task :app:processDebugResources
+> Task :app:checkDebugDuplicateClasses
+> Task :app:mergeDebugNativeLibs
+> Task :app:desugarDebugFileDependencies
+> Task :app:compileDebugKotlin
+> Task :app:mergeExtDexDebug
+> Task :app:mergeLibDexDebug
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libimage_processing_util_jni.so, libonnxruntime.so, libsherpa-onnx-c-api.so, libsherpa-onnx-cxx-api.so, libsherpa-onnx-jni.so.
+
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/FirstRunActivity.kt:208:15 'startActivityForResult(Intent, Int): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/FirstRunActivity.kt:216:15 'startActivityForResult(Intent, Int): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/MainActivity.kt:345:15 'startActivityForResult(Intent, Int): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SelfCheckActivity.kt:56:23 'getter for defaultDisplay: Display!' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SelfCheckActivity.kt:56:38 'getRealMetrics(DisplayMetrics!): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:5:20 'ProgressDialog' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:896:13 'startActivityForResult(Intent, Int): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:905:19 'startActivityForResult(Intent, Int): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:1144:18 'constructor ProgressDialog(Context!)' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:1144:18 'ProgressDialog' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:1145:13 'setMessage(CharSequence!): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:1158:54 'setMessage(CharSequence!): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/SettingsActivity.kt:1226:15 'startActivityForResult(Intent, Int): Unit' is deprecated. Deprecated in Java
+w: file:///home/runner/work/LoudSpeak/LoudSpeak/app/src/main/java/com/oska/loudspeak/core/Annotation.kt:231:26 Name shadowed: i
+
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+BUILD SUCCESSFUL in 1m 59s
+40 actionable tasks: 40 executed
