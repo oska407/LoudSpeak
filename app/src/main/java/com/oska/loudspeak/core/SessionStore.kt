@@ -133,6 +133,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 .put("punct", s.punct)          // 补的标点（不改字）
                 .put("mergePrev", s.mergePrev)  // 并回上一句的碎片
                 .put("lowVol", JSONArray().apply { s.lowVol.forEach { put(if (it) 1 else 0) } }) // 音量不达标逐字标注
+                .put("speaker", s.speakerName)   // 声纹区分：谁说的（空=未接入/没认出）
                 .put("take", s.take))
         }
         File(dir, "transcript.json").writeText(arr.toString(2))
@@ -214,6 +215,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                     uncertain = uncertain,
                     selfMarked = o.optBoolean("selfMarked", false)
                 )
+                s.speakerName = o.optString("speaker", "")
                 val pr = o.optJSONArray("pronouns")
                 if (pr != null) for (j in 0 until pr.length()) {
                     val p = pr.getJSONObject(j)

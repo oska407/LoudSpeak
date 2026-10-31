@@ -186,8 +186,11 @@ class WaveformView(v: View) {
             }
         } else {
             // 录制中：滚动窗口
+            // ⚠️ 背景已用 stroke 色铺满，柱体必须用亮色（lcdOn），否则和背景同色看不见
+            // —— 这正是「四档音波都丢失」的根因（录制态柱体 = 背景色 = 隐形）。
             val n = window.size
             val step = w / n
+            paint.color = Skin.current.lcdOn
             paint.strokeWidth = (step * 0.55f).coerceIn(1.2f, 4f)
             for (i in 0 until n) {
                 val a = window[(windowPos + i) % n]

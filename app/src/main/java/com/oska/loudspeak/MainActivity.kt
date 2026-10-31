@@ -53,11 +53,15 @@ import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
 import com.oska.loudspeak.core.Skin
 import com.oska.loudspeak.core.WaveformView
+import com.oska.loudspeak.core.SpeakerEngine
+import com.oska.loudspeak.core.SpeakerProfile
+import com.oska.loudspeak.core.SpeakerProfileStore
 import com.oska.loudspeak.core.ReplayController
 import com.oska.loudspeak.core.Ui
 import java.io.File
 import java.util.concurrent.Executors
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * 主界面（§6 四行布局 + §12 交互流程）。
@@ -140,6 +144,13 @@ class MainActivity : LsActivity() {
     private var lastGlowAt = 0L
     /** 过热提示（每会话一次，非阻断） */
     private var promptedHot = false
+
+    // ---- 声纹区分（§声纹）：录音时按句比对已登记声纹，命中则句首加「名字：」 ----
+    private var spkEngine: SpeakerEngine? = null
+    private var spkProfiles: List<SpeakerProfile> = emptyList()
+    private var speakerReady = false
+    /** CAM++ 余弦相似度阈值：超过才认成某人，否则归「其他」 */
+    private val SPEAKER_THRESHOLD = 0.40f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -454,6 +465,9 @@ class MainActivity : LsActivity() {
         sessionDir = if (mode == Prefs.MODE_FULL || mode == Prefs.MODE_AUDIO)
             store.newSessionDir(sessionStartedAt) else null
 
+        // 声纹区分：有登记过声纹才在录音时按句比对；提前在后台把 CAM++ 模型加载好
+        ensureSpeakerLoaded()
+
         val withCamera = mode == Prefs.MODE_FULL || mode == Prefs.MODE_DISPLAY_VIDEO
         if (withCamera) bindCamera(record = mode == Prefs.MODE_FULL)
         else unbindCamera()
@@ -490,7 +504,8 @@ class MainActivity : LsActivity() {
                 asrExecutor.execute {
                     val res = asr.transcribe(pcm)
                     if (res == null) CrashReporter.report("error", "ASR 单句转写失败/为空 t0=$t0")
-                    main.post { onAsrResult(res, t0, t1) }
+                    val spk = identifySpeaker(pcm)
+                    main.post { onAsrResult(res, t0, t1, spk) }
                 }
             },
             // ③④ 档不落盘 → 不攒全程 PCM（10 分钟省 ~38MB，见 AudioEngine 注释）
@@ -725,7 +740,17 @@ class MainActivity : LsActivity() {
 
     // ================= ASR 结果 → 显示（§12.2 步 3–4） =================
 
-    private fun onAsrResult(res: AsrResult?, t0: Long, t1: Long) {
+    private fun onAsrResult(res: AsrResult?, t0: Long, t1: Long, spkName: String = "") {
+        // 声纹区分：把识别到的说话人落到这句（句首渲染「名字：」，回放也读得到）
+        val text = res?.text
+        val s = RuleEngine.Sentence(
+            index = sentences.size, tStartMs = t0, tEndMs = t1,
+            text = text ?: "?", uncertain = text == null,
+            take = take,
+            absMs = res?.absMs(t0) ?: LongArray(0),
+            absWords = res?.absWords() ?: emptyArray(),
+            speakerName = spkName
+        )
         // 识别语言档位（§ASR）：非「自动」时，只留目标语种，其余整句丢弃。
         // 解码始终走自动（AsrEngine.language=""），保证检测到的语种可信；这里只按设置过滤。
         // 设成中文却说了英文 → 那句英文被直接丢弃（不显示、也不显示乱码），中文句正常。
@@ -738,15 +763,6 @@ class MainActivity : LsActivity() {
             }
             if (drop) return
         }
-        val text = res?.text
-        val s = RuleEngine.Sentence(
-            index = sentences.size, tStartMs = t0, tEndMs = t1,
-            text = text ?: "?", uncertain = text == null,
-            take = take,
-            // 字级时间戳 → 会话绝对毫秒（R12 流畅度用；识别失败时为空数组，报告里跳过）
-            absMs = res?.absMs(t0) ?: LongArray(0),
-            absWords = res?.absWords() ?: emptyArray()
-        )
         RuleEngine.evaluate(listOf(s), l4Enabled = false, pronounList = Prefs.pronounList(this))   // 实时只做 L1（§8.6 起点只开 L1）
         sentences.add(s)
         // 语法分句（R11）：补句末标点、把碎片并回上一句；**不改字**，可关
@@ -762,6 +778,50 @@ class MainActivity : LsActivity() {
                 fireGlow()
             }
         }
+    }
+
+    // ================= 声纹区分（§声纹） =================
+
+    /**
+     * 有登记过声纹才在录音时按句比对；后台把 CAM++ 模型加载好（只加载一次，重复进入不重载）。
+     * 声纹档案每次都从盘上读，保证「设置里新登了一个人」之后下一段录音就能用上。
+     */
+    private fun ensureSpeakerLoaded() {
+        spkProfiles = SpeakerProfileStore(Prefs.modelsDir(this)).load()
+        if (spkProfiles.isEmpty()) { speakerReady = false; spkEngine = null; return }
+        if (spkEngine != null && speakerReady) return
+        asrExecutor.execute {
+            val eng = SpeakerEngine(Prefs.modelsDir(this))
+            speakerReady = eng.loadFirst()
+            spkEngine = if (speakerReady) eng else null
+        }
+    }
+
+    /** 给一句话的 PCM 判定说话人：命中已登记声纹返回名字，否则返回「其他」，没就绪返回空串 */
+    private fun identifySpeaker(pcm: FloatArray): String {
+        val eng = spkEngine ?: return ""
+        if (!speakerReady) return ""
+        val emb = eng.embed(pcm) ?: return ""
+        var best = 0f
+        var hit: SpeakerProfile? = null
+        for (p in spkProfiles) {
+            val sim = cosine(emb, p.emb)
+            if (sim > best) { best = sim; hit = p }
+        }
+        // 没人达到阈值 → 归「其他」（用户要求：没入录的声纹标「其他」）
+        if (hit == null || best < SPEAKER_THRESHOLD) return "其他"
+        // 这个人被「关掉标注」→ 这句不加名字。返回空串而不是「其他」：
+        // 「其他」= 不认识，「空」= 认识但这次不标，两者不能混（否则关掉的人会被当成陌生人）。
+        return if (hit.transcribe) hit.name else ""
+    }
+
+    private fun cosine(a: FloatArray, b: FloatArray): Float {
+        val n = minOf(a.size, b.size)
+        if (n == 0) return 0f
+        var dot = 0f; var na = 0f; var nb = 0f
+        for (i in 0 until n) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        val d = sqrt(na) * sqrt(nb)
+        return if (d > 0f) dot / d else 0f
     }
 
     /**
@@ -1086,6 +1146,9 @@ class MainActivity : LsActivity() {
         val withCamera = mode == Prefs.MODE_FULL || mode == Prefs.MODE_DISPLAY_VIDEO
         if (withCamera) bindCamera(record = mode == Prefs.MODE_FULL)
 
+        // 再讲一次：同一场会话（诊断→重录），声纹模型若已被释放要重新加载
+        ensureSpeakerLoaded()
+
         audio = AudioEngine(
             vadSilenceMs = Prefs.vadSilenceMs(this),
             onFrame = { rawL, amp ->
@@ -1098,7 +1161,8 @@ class MainActivity : LsActivity() {
             onSentence = { pcm, t0, t1 ->
                 asrExecutor.execute {
                     val res = asr.transcribe(pcm)
-                    main.post { onAsrResult(res, t0, t1) }
+                    val spk = identifySpeaker(pcm)
+                    main.post { onAsrResult(res, t0, t1, spk) }
                 }
             },
             keepPcm = (mode == Prefs.MODE_FULL || mode == Prefs.MODE_AUDIO)
@@ -1152,6 +1216,7 @@ class MainActivity : LsActivity() {
         try { videoRecording?.stop() } catch (_: Exception) {}
         try { replayCtrl?.release() } catch (_: Exception) {}
         try { audio?.stop() } catch (_: Exception) {}
+        try { spkEngine?.release() } catch (_: Exception) {}
         asr.release()
         asrExecutor.shutdown()
         ioExecutor.shutdown()

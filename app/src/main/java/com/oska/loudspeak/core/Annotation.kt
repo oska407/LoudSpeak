@@ -63,10 +63,15 @@ object Annotator {
         else -> null
     }
 
-    /** 给 [st, sb.length) 上色，并把字号压到标注字号（设置里 8..16sp，默认 10）。 */
-    private fun paint(sb: SpannableStringBuilder, st: Int, color: Int, prefs: AnnotationPrefs) {
+    /**
+     * 给 [st, sb.length) 上色。
+     * [shrink]=true（默认）时把字号压到标注字号（8..16sp）；false 时保持正文基础字号——
+     * 代词 / 口头禅 / 歧义 / 模糊词都是 ASR 原文字的高亮，**不该缩小**（用户要求：代词字号不缩小）。
+     * 只有我们额外加的字（L4 改写、图例、自评、句末标点、"?"）才缩小。
+     */
+    private fun paint(sb: SpannableStringBuilder, st: Int, color: Int, prefs: AnnotationPrefs, shrink: Boolean = true) {
         sb.setSpan(ForegroundColorSpan(color), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.setSpan(AbsoluteSizeSpan(prefs.fontSizeSp, true), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (shrink) sb.setSpan(AbsoluteSizeSpan(prefs.fontSizeSp, true), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     // 统一审美配色（深色界面上的高对比，避免刺眼）
@@ -81,6 +86,7 @@ object Annotator {
     val C_L3     = 0xFFB8860B.toInt()   // L3 指代歧义：暗金（比 L2 橙弱一档，不抢眼）
     val C_L4     = 0xFF2DA8A0.toInt()   // L4 更清楚的说法：蓝绿
     val C_LOWVOL = 0xFF4F9BE8.toInt()   // 音量不达标：蓝（与代词红/句式橙/L4 蓝绿都不同）
+    val C_SPEAKER = 0xFF4FA3FF.toInt()  // 声纹区分「名字：」：蓝，区别于标注色，且不缩小
 
     // 「说得顺不顺」（R12）单独一套颜色：用青蓝，避开代词红 / 句式橙，别跟现有标注打架
     val C_FLUENCY_HEAD = 0xFF546E7A.toInt()   // 小标题：跟章节分隔线一个调子
@@ -125,6 +131,12 @@ object Annotator {
                 while (lastChapter < chapters && lastChapter * 60000 < s.tEndMs) {
                     lastChapter++; appendSep(sb, lastChapter)
                 }
+                // 声纹区分：句首「名字：」/「其他：」（本机模型无大模型状态下的实时区分结果）
+                if (s.speakerName.isNotEmpty()) {
+                    val ps = sb.length
+                    sb.append(s.speakerName).append("：")
+                    paint(sb, ps, C_SPEAKER, prefs, shrink = false)
+                }
                 sb.append(if (s.uncertain) "?" else s.displayText)
                 // 并回上一句的碎片直接接着写，不留空格
                 appendGap(sb, sentences.getOrNull(i + 1))
@@ -138,6 +150,12 @@ object Annotator {
         sentences.forEachIndexed { i, s ->
             while (lastChapter < chapters && lastChapter * 60000 < s.tEndMs) {
                 lastChapter++; appendSep(sb, lastChapter)
+            }
+            // 声纹区分：句首「名字：」/「其他：」（实时区分结果；空=未接入/没认出）
+            if (s.speakerName.isNotEmpty()) {
+                val ps = sb.length
+                sb.append(s.speakerName).append("：")
+                paint(sb, ps, C_SPEAKER, prefs, shrink = false)
             }
             val sentStart = sb.length
             if (s.uncertain) {
@@ -175,16 +193,16 @@ object Annotator {
                     sb.append(m.word)
                     when (m.kind) {
                         Mark.PRONOUN -> {
-                            paint(sb, st, C_PRONOUN, prefs)
+                            paint(sb, st, C_PRONOUN, prefs, shrink = false)
                             sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
-                        Mark.AMBIG -> paint(sb, st, C_L3, prefs)
+                        Mark.AMBIG -> paint(sb, st, C_L3, prefs, shrink = false)
                         Mark.MUZZY -> {
-                            paint(sb, st, C_MUZZY, prefs)
+                            paint(sb, st, C_MUZZY, prefs, shrink = false)
                             sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                         else -> {
-                            paint(sb, st, C_FILLER, prefs)
+                            paint(sb, st, C_FILLER, prefs, shrink = false)
                             // 2026-10-23 用户要求：删除线（穿文字）改下划线（文字下方）
                             sb.setSpan(UnderlineSpan(), st, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
@@ -198,10 +216,10 @@ object Annotator {
                     }
                 }
                 if (idx < s.text.length) sb.append(s.text.substring(idx))
-                // 音量不达标：文字下方的蓝色下划线（独立于四层标注，跟主开关走）。
+                // 音量不达标：文字下方的蓝色下划线（独立于四层标注，受 annotLowVol 开关控制，默认开）。
                 // body 区可能插入了歧义「?」等标记，先用 text→sb 映射把下标对齐，
                 // 再对每个 lowVol 字挂一截蓝色下划线。
-                if (s.lowVol.isNotEmpty()) {
+                if (prefs.lowVol && s.lowVol.isNotEmpty()) {
                     val bodyEnd = sb.length
                     val lvMap = IntArray(s.text.length) { -1 }
                     var ptx = 0; var psb = sentStart
@@ -335,5 +353,11 @@ data class AnnotationPrefs(
     /** L4 更清楚的说法（蓝绿 →，点按才展开改写小字）—— 模型专属 */
     val l4: Boolean = false,
     /** 标注字号（sp）：作用于所有标注文字与符号，设置页可调 8..16，默认 10 */
-    val fontSizeSp: Int = 10
+    val fontSizeSp: Int = 10,
+    /** 音量不达标下划线标注（独立于四层标注层，默认开） */
+    val lowVol: Boolean = true,
+    /** 每人的声纹转写开关：id -> 是否转写。空=都转写 */
+    val speakerTranscribe: Map<String, Boolean> = emptyMap(),
+    /** 声纹前缀：句 index -> 名字（非空时句首加「名字：」）。空=未接入声纹区分 */
+    val speakerPrefix: Map<Int, String> = emptyMap()
 )

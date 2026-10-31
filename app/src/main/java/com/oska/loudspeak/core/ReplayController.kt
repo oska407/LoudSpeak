@@ -44,6 +44,8 @@ class ReplayController(
 
     private var audioMp: MediaPlayer? = null
     private var videoView: VideoView? = null
+    /** VideoView 内部的 MediaPlayer：视频倍速只能通过它设（VideoView.setPlaybackSpeed 是 @hide） */
+    private var videoMp: MediaPlayer? = null
     private var state = State.IDLE
     private var curSeg = 0
     private var speed = 1.0f
@@ -85,6 +87,9 @@ class ReplayController(
         if (!useVideo) return
         videoView = vv
         vv.setOnPreparedListener {
+            videoMp = it
+            // 每次（重新）准备都会把倍速重置回 1.0，这里重新落一遍当前倍速
+            applyVideoSpeed()
             if (pendingSeekMs >= 0) {
                 it.seekTo((pendingSeekMs - segStart.getOrElse(curSeg) { 0L }).toInt())
                 pendingSeekMs = -1
@@ -161,6 +166,21 @@ class ReplayController(
     fun setSpeed(s: Float) { speed = s; applySpeed() }
     private fun applySpeed() {
         if (!useVideo) try { audioMp?.playbackParams = audioMp!!.playbackParams.setSpeed(speed) } catch (_: Exception) {}
+        else applyVideoSpeed()
+    }
+
+    /**
+     * 视频倍速：走 VideoView 内部 MediaPlayer 的 `playbackParams`（API 23+ 公开接口）。
+     *
+     * ⚠️ 不要用 `VideoView.setPlaybackSpeed(float)`：它在 AOSP 里是 **@hide**，
+     * SDK 桩里没有这个符号，直接写会编译失败（0.2.8 就是这么挂的：Unresolved reference）。
+     * MediaPlayer.setPlaybackParams 同时作用于音频与视频渲染，效果一样且是公开 API。
+     * 个别机型/片源不支持变速会抛，吞掉即可（保持 1.0x，不影响播放）。
+     */
+    private fun applyVideoSpeed() {
+        val mp = videoMp ?: return
+        if (android.os.Build.VERSION.SDK_INT < 23) return
+        try { mp.playbackParams = mp.playbackParams.setSpeed(speed) } catch (_: Exception) {}
     }
 
     // ---------- 句导航 ----------
@@ -216,6 +236,6 @@ class ReplayController(
     fun release() {
         try { audioMp?.release() } catch (_: Exception) {}
         ticker.removeCallbacks(tick)
-        videoView = null; audioMp = null
+        videoView = null; audioMp = null; videoMp = null
     }
 }

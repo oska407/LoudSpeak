@@ -8,6 +8,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
@@ -28,6 +29,13 @@ import java.io.File
  * - 七键：播放 / 暂停 / 停止 / 上句 / 下句 / 画面 / 返回。
  * - 画面三态：取景 → 全幅 → 关（只留音频）。
  * - 进场（用户选 A）：进页面即暂停，playhead 定位到首条问题句开头（①）/ 0（②），不自动出声。
+ *
+ * 2026-10 改版（回应真机反馈）：
+ *  - 文字显示区放大（字号 20sp + 占满纵向剩余空间）。
+ *  - 加一条**可拖动**的播放进度条（解决「不能调整播放位置」）。
+ *  - 倍速改成**可拖动的小滑杆**（0.5x–2.0x，紧凑），且视频档也能调（VideoView.setPlaybackSpeed）。
+ *  - 音波条保留（回放概览 + 播放头 + 句分隔）。
+ *  - 视频画面**保持宽高比铺满（cover）**，不再被拉伸变形。
  */
 class SessionViewActivity : LsActivity() {
 
@@ -46,9 +54,12 @@ class SessionViewActivity : LsActivity() {
     private lateinit var videoFrame: FrameLayout
     private lateinit var btnPlay: Button
     private lateinit var btnPause: Button
-    private lateinit var btnSpeed: Button
-    private lateinit var btnVideo: Button
+    private lateinit var seekPos: SeekBar
+    private lateinit var seekSpeed: SeekBar
+    private lateinit var speedTv: TextView
     private var sentences: List<com.oska.loudspeak.core.RuleEngine.Sentence> = emptyList()
+    /** 进度条拖动中：onPosition 回调别来回抢 */
+    private var seekingPos = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,7 +110,7 @@ class SessionViewActivity : LsActivity() {
         }
         root.addView(top)
 
-        // ---- 中部：左画面 + 右四区 ----
+        // ---- 中部：左画面 + 右栏 ----
         val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
         // 左：画面
@@ -113,10 +124,10 @@ class SessionViewActivity : LsActivity() {
         if (hasVideo) videoFrame.addView(videoView) else videoFrame.visibility = View.GONE
         body.addView(videoFrame)
 
-        // 右：转写 + 波形 + 时间 + 倍速 + 七键
+        // 右：转写 + 波形 + 进度 + 倍速 + 七键
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 73f)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 74f)
             setPadding(pad / 2, 0, 0, 0)
         }
 
@@ -125,7 +136,7 @@ class SessionViewActivity : LsActivity() {
         val annPrefs = Prefs.annotationPrefs(this)
         val tv = TextView(this).apply {
             text = Annotator.build(sentences, chapters.toInt(), annPrefs)
-            textSize = 18f; setTextColor(0xFFDCE3E8.toInt())
+            textSize = 20f; setTextColor(0xFFDCE3E8.toInt())
             setLineSpacing(8f * resources.displayMetrics.density, 1.0f)
             setPadding(0, pad / 2, 0, pad / 2)
         }
@@ -134,28 +145,72 @@ class SessionViewActivity : LsActivity() {
         val sc = ScrollView(this).apply { addView(tv) }
         right.addView(sc, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        // WaveformView 是绘制包装器（不是 View 子类），必须套一个真正的 View 宿主
+        // 音波条（回放概览 + 播放头 + 句分隔）
         val waveHost = object : View(this) {
             val wf = WaveformView(this)
             override fun onDraw(c: android.graphics.Canvas) = wf.onDraw(c)
         }.apply {
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (resources.displayMetrics.density * 56).toInt())
+                LinearLayout.LayoutParams.MATCH_PARENT, (resources.displayMetrics.density * 60).toInt())
         }
         wave = waveHost.wf
         right.addView(waveHost)
 
+        // 进度条（可拖动，调整播放位置）
+        val posRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, pad / 2, 0, pad / 4)
+        }
+        seekPos = SeekBar(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            max = 1000; progress = 0
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        val total = controller.getTotalMs()
+                        timeTv.text = "${fmt((p * total / 1000f).toLong())} / ${fmt(total)}"
+                    }
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) { seekingPos = true }
+                override fun onStopTrackingTouch(s: SeekBar?) {
+                    val total = controller.getTotalMs()
+                    controller.seek((s?.progress ?: 0) * total / 1000)
+                    seekingPos = false
+                }
+            })
+        }
         timeTv = TextView(this).apply {
             text = "00:00 / 00:00"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt())
-            setPadding(0, pad / 2, 0, pad / 2)
+            setPadding((pad * 0.6).toInt(), 0, 0, 0)
         }
-        right.addView(timeTv)
+        posRow.addView(seekPos); posRow.addView(timeTv)
+        right.addView(posRow)
 
-        btnSpeed = Button(this).apply {
-            text = "倍速 1.0x"; textSize = 12f; isEnabled = !hasVideo
-            setOnClickListener { cycleSpeed() }
+        // 倍速（紧凑滑杆，0.5x–2.0x，视频档也能调）
+        val spdRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, pad / 4, 0, pad / 2)
         }
-        right.addView(btnSpeed)
+        val spdLabel = TextView(this).apply { text = "倍速"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt()) }
+        seekSpeed = SeekBar(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            max = 6; progress = 2   // 默认 1.0x
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                    if (fromUser) applySpeedFromSeek()
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) { applySpeedFromSeek() }
+            })
+        }
+        speedTv = TextView(this).apply {
+            text = "1.0x"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt())
+            setPadding((pad * 0.6).toInt(), 0, 0, 0)
+        }
+        spdRow.addView(spdLabel); spdRow.addView(seekSpeed); spdRow.addView(speedTv)
+        right.addView(spdRow)
 
         // 七键
         btnPlay = mkBtn("播放") { controller.play() }
@@ -184,6 +239,7 @@ class SessionViewActivity : LsActivity() {
             onPosition = { pos, total -> runOnUiThread {
                 wave.playhead = if (total > 0) pos.toFloat() / total else 0f
                 timeTv.text = "${fmt(pos)} / ${fmt(total)}"
+                if (!seekingPos && total > 0) seekPos.progress = (pos * 1000 / total).toInt()
                 wave.invalidate()
             } })
         wave.onSeek = { frac -> controller.seek((frac * controller.getTotalMs()).toLong()) }
@@ -200,6 +256,12 @@ class SessionViewActivity : LsActivity() {
 
         videoFrame.post { applyFraming() }
         updateButtons(controller.currentState())
+    }
+
+    private fun applySpeedFromSeek() {
+        val speed = 0.5f + (seekSpeed.progress * 0.25f)   // 0.5 / 0.75 / 1.0 / 1.25 / 1.5 / 1.75 / 2.0
+        controller.setSpeed(speed)
+        speedTv.text = "%.2fx".format(speed)
     }
 
     private fun mkBtn(text: String, fn: () -> Unit): Button =
@@ -220,37 +282,39 @@ class SessionViewActivity : LsActivity() {
         if (idx != null) controller.seekSentence(idx)
     }
 
-    private var speedIdx = 1 // 0=0.75 1=1.0 2=1.25 3=1.5
-    private val speeds = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f)
-    private fun cycleSpeed() {
-        speedIdx = (speedIdx + 1) % speeds.size
-        controller.setSpeed(speeds[speedIdx])
-        btnSpeed.text = "倍速 ${speeds[speedIdx]}x"
-    }
+    private var btnVideo: Button? = null
 
     private fun cycleVideo() {
         if (!hasVideo) return
         videoMode = (videoMode + 1) % 3
-        btnVideo.text = when (videoMode) {
+        btnVideo?.text = when (videoMode) {
             0 -> "画面·取景"; 1 -> "画面·全幅"; else -> "画面·关"
         }
         applyFraming()
     }
 
-    /** 取景：内层按 16:9 撑到 1280px，再平移挑 417px 竖条（1:1 像素，不缩放）；全幅整幅；关则隐去画面 */
+    /**
+     * 取景：内层按 16:9 撑到 1280px，再平移挑 417px 竖条（1:1 像素，不缩放）；全幅整幅；关则隐去画面。
+     * 关键修复：无论哪种模式都**保持宽高比铺满（cover）**，不再把视频拉伸到 FrameLayout 的异形比例 → 变形。
+     */
     private fun applyFraming() {
         if (!hasVideo) return
         videoFrame.post {
+            val fw = videoFrame.width.toFloat(); val fh = videoFrame.height.toFloat()
+            // 录制原视频 1280×720（16:9），cover 铺满：取统一放大系数，居中，溢出部分裁掉（不变形）
+            val cov = maxOf(fw / 1280f, fh / 720f)
+            videoView.scaleX = cov; videoView.scaleY = cov
+            val dw = 1280f * cov; val dh = 720f * cov
+            val cx = (fw - dw) / 2f; val cy = (fh - dh) / 2f
             when (videoMode) {
-                0 -> {
-                    val sx = 1280f / 417f
-                    videoView.scaleX = sx; videoView.scaleY = 1f
-                    val overflow = (sx - 1f) * videoFrame.width
-                    videoView.translationX = -((1f - cropBias.toFloat()) / 2f) * overflow
+                0 -> { // 取景：在 cover 基础上按 cropBias 横向平移，挑出脸部竖条（只平移、不缩放、不变形）
+                    val shift = -cropBias.toFloat() * (dw - fw) / 2f
+                    videoView.translationX = cx + shift
+                    videoView.translationY = cy
                     videoFrame.visibility = View.VISIBLE
                 }
-                1 -> {
-                    videoView.scaleX = 1f; videoView.scaleY = 1f; videoView.translationX = 0f
+                1 -> { // 全幅：纯 cover 居中
+                    videoView.translationX = cx; videoView.translationY = cy
                     videoFrame.visibility = View.VISIBLE
                 }
                 else -> videoFrame.visibility = View.INVISIBLE

@@ -1,7 +1,9 @@
 package com.oska.loudspeak.core
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import java.io.File
 import java.util.Locale
@@ -167,12 +169,87 @@ object ModelScanner {
         }
     }
 
-    private fun queryName(ctx: Context, uri: Uri): String? = try {
+    fun queryName(ctx: Context, uri: Uri): String? = try {
         ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
             val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             if (c.moveToFirst() && i >= 0) c.getString(i) else null
         } ?: uri.lastPathSegment
     } catch (_: Exception) { uri.lastPathSegment }
+
+    // ---------------- SAF 目录树导入（首次引导 / 设置页共用） ----------------
+
+    /**
+     * 把所选目录（含子目录，深度 ≤ 6）里的 ASR 文件装上对应位置：
+     *   - `tokens.txt` → <models>/asr/tokens.txt
+     *   - 任意 `.onnx` → <models>/asr/model.int8.onnx（多个时挑最像 SenseVoice 主模型的）
+     * 返回一句能直接显示给用户的结果说明（不抛异常）。
+     *
+     * 早先只在设置页有这入口，首次引导「选整个文件夹」被埋在二级页里、用户以为没生效。
+     * 现在抽到这里，首次引导也能直接调，且统一了「命名固定为 model.int8.onnx」的落地逻辑。
+     */
+    fun importTree(cr: ContentResolver, treeUri: Uri, modelsDir: String): String {
+        return try {
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            val onnx = ArrayList<Pair<String, Uri>>()
+            val tokens = ArrayList<Pair<String, Uri>>()
+            walkTree(cr, treeUri, rootId, onnx, tokens, 0)
+            if (onnx.isEmpty() || tokens.isEmpty()) {
+                return "未找到模型：需要同时有 tokens.txt 和一个 .onnx 文件（在所选文件夹或其子目录里）"
+            }
+            val destAsr = File(modelsDir, "asr").apply { mkdirs() }
+            val best = onnx.maxByOrNull { scoreName(it.first) }!!
+            val okModel = copyFrom(cr, best.second, File(destAsr, "model.int8.onnx"))
+            val okTokens = copyFrom(cr, tokens.first().second, File(destAsr, "tokens.txt"))
+            when {
+                okModel && okTokens -> "ASR 模型已导入 ✓"
+                !okModel && !okTokens -> "ASR 导入失败：两个文件都没写进去"
+                !okModel -> "ASR 导入失败：model.int8.onnx 写入失败"
+                else -> "ASR 导入失败：tokens.txt 写入失败"
+            }
+        } catch (e: Exception) {
+            "导入失败：${e.message?.take(120) ?: e.javaClass.simpleName}"
+        }
+    }
+
+    private fun walkTree(
+        cr: ContentResolver, treeUri: Uri, dirId: String,
+        onnx: MutableList<Pair<String, Uri>>, tokens: MutableList<Pair<String, Uri>>, depth: Int
+    ) {
+        if (depth > 6) return
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
+        cr.query(children, arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        ), null, null, null)?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0); val name = c.getString(1) ?: continue; val mime = c.getString(2)
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    walkTree(cr, treeUri, id, onnx, tokens, depth + 1); continue
+                }
+                val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                when {
+                    name.equals("tokens.txt", true) -> tokens.add(name to uri)
+                    name.endsWith(".onnx", true) -> onnx.add(name to uri)
+                }
+            }
+        }
+    }
+
+    private fun scoreName(n: String): Int {
+        val s = n.lowercase(Locale.US)
+        var v = 0
+        if (s.contains("sense")) v += 6
+        if (s.contains("model")) v += 3
+        if (s.contains("int8")) v += 2
+        return v
+    }
+
+    private fun copyFrom(cr: ContentResolver, uri: Uri, dst: File): Boolean = try {
+        cr.openInputStream(uri)?.use { input ->
+            dst.outputStream().use { output -> input.copyTo(output, 1 shl 20) }
+        } != null && dst.isFile && dst.length() > 0
+    } catch (_: Exception) { false }
 
     /** 内容 Uri → 目标文件（1MB 缓冲，10 分钟视频量级也不占内存） */
     fun copyUri(ctx: Context, uri: Uri, dst: File): Boolean = try {

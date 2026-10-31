@@ -120,7 +120,12 @@ object RuleEngine {
         /** L4：大模型给的「更清楚的说法」，null = 没给 */
         var rewrite: String? = null,
         /** L4：大模型给的智能追问语；非空时优先于规则追问 [followUp] */
-        var modelFollowUp: String? = null
+        var modelFollowUp: String? = null,
+        /**
+         * 这句是谁说的（声纹区分，§说话人）。空 = 未接入声纹区分 / 没认出。
+         * 非空时回放/主界面在句首加「名字：」。
+         */
+        var speakerName: String = ""
     ) {
 
         /** 显示用文本：原文 + 补的标点。**原文一个字都不改**（硬约定） */

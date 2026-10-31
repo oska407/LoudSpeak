@@ -145,6 +145,24 @@ object Prefs {
     fun setAnnotFontSizeSp(ctx: Context, v: Int) =
         sp(ctx).edit().putInt("annotFontSizeSp", v.coerceIn(8, 16)).apply()
 
+    /** 音量不达标下划线标注（独立于四层标注层，默认开；关掉则「偏小」句不再标蓝下划线） */
+    fun annotLowVol(ctx: Context): Boolean = sp(ctx).getBoolean("annotLowVol", true)
+    fun setAnnotLowVol(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotLowVol", v).apply()
+
+    /** 每人的声纹转写开关：id -> 是否转写（标注）。默认都转写（缺省=转写）。 */
+    fun speakerTranscribe(ctx: Context): Map<String, Boolean> {
+        val raw = sp(ctx).getString("speakerTranscribe", null) ?: return emptyMap()
+        val m = mutableMapOf<String, Boolean>()
+        raw.split(";").forEach { p ->
+            val i = p.indexOf(':')
+            if (i > 0) m[p.substring(0, i)] = p.substring(i + 1) == "1"
+        }
+        return m
+    }
+    fun setSpeakerTranscribe(ctx: Context, map: Map<String, Boolean>) =
+        sp(ctx).edit().putString("speakerTranscribe",
+            map.entries.joinToString(";") { "${it.key}:${if (it.value) 1 else 0}" }).apply()
+
     /**
      * 本次要送进 /judge 的四层门控：只含「开关开着 **且** 需要模型算」的层。
      * 关掉的层不送 —— 省 PC 端 token 与延时，也不会把用户关掉的东西算出来。
@@ -213,7 +231,9 @@ object Prefs {
             l2Model = annotL2Model(ctx),
             l3 = annotL3(ctx),
             l4 = annotL4(ctx),
-            fontSizeSp = annotFontSizeSp(ctx)
+            fontSizeSp = annotFontSizeSp(ctx),
+            lowVol = annotLowVol(ctx),
+            speakerTranscribe = speakerTranscribe(ctx)
         )
 
     /** 模糊词标注（跟 L2 一起开，默认关） */

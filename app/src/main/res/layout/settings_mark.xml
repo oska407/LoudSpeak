@@ -256,6 +256,41 @@
                 android:text="语速按「第一个字到最后一个字」算，不含句尾那段安静；停顿要按合并后的整句看，半截话接回上一句时，中间那次停顿也会被算进去。" />
         </LinearLayout>
 
+        <TextView style="@style/SetSection" android:text="声纹（这句是谁说的）" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="12dp"
+                android:paddingBottom="4dp"
+                android:text="录了声纹之后，每句识别文字前面会自动加「名字：」，多人对话时一眼看出哪句是谁说的。\n下面按人开关：关掉某个人，他那几句就不加名字（文字照样识别、照样标注），不是把这个人删掉。" />
+
+            <!-- 每个已登记声纹一个开关，运行时按档案动态塞进来（见 rebuildSpkToggles） -->
+            <LinearLayout
+                android:id="@+id/llSpkToggles"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/tvSpkNone"
+                style="@style/SetDesc"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="还没有登记声纹。点下面进去录（需要先装声纹模型）。" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSpkManage"
+                style="@style/SetBtnAccent"
+                android:text="录入 / 管理声纹（装模型 · 录声音 · 改名 · 删除）" />
+
+            <TextView
+                style="@style/SetDesc"
+                android:paddingTop="6dp"
+                android:text="认不出来的时候会标「其他：」——那是「不认识这个人」，跟「关掉了某人的标注」不是一回事。" />
+        </LinearLayout>
+
         <TextView style="@style/SetSection" android:text="标注说明" />
 
         <LinearLayout style="@style/SetCard">

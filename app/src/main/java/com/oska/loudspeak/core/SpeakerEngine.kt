@@ -1,5 +1,7 @@
 package com.oska.loudspeak.core
 
+import android.content.Context
+import android.net.Uri
 import android.util.Log
 import com.k2fsa.sherpa.onnx.OnlineStream
 import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractor
@@ -113,5 +115,21 @@ class SpeakerEngine(private val modelsDir: String) {
         available = false
         dim = 0
         loadedName = ""
+    }
+
+    /**
+     * 从系统文件选择器选中的单个 .onnx，复制到 spk/ 目录（保留文件名）。
+     * 供设置页「从文件管理器选声纹模型」用：用户不用自己拷进 app 私有目录。
+     * 返回是否成功（文件就绪且非空）。
+     */
+    fun importUri(ctx: Context, uri: Uri, name: String): Boolean {
+        val dst = File(spkDir(), name)
+        return try {
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                dst.outputStream().use { input.copyTo(it, 1 shl 20) }
+            } != null && dst.isFile && dst.length() > 0
+        } catch (e: Throwable) {
+            Log.e("SpeakerEngine", "importUri failed", e); false
+        }
     }
 }

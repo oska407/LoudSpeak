@@ -11,7 +11,9 @@ data class SpeakerProfile(
     val id: String,
     val name: String,
     val emb: FloatArray,
-    val createdAt: Long
+    val createdAt: Long,
+    /** 是否对该声纹做标注（转写 + 句首「名字：」前缀）。默认开；关掉 = 这人的话不当练习对象 */
+    val transcribe: Boolean = true
 )
 
 /**
@@ -32,7 +34,7 @@ class SpeakerProfileStore(private val modelsDir: String) {
                 val o = arr.getJSONObject(i)
                 val ea = o.getJSONArray("emb")
                 val emb = FloatArray(ea.length()) { ea.getDouble(it).toFloat() }
-                out.add(SpeakerProfile(o.getString("id"), o.getString("name"), emb, o.optLong("createdAt")))
+                out.add(SpeakerProfile(o.getString("id"), o.getString("name"), emb, o.optLong("createdAt"), o.optBoolean("transcribe", true)))
             }
             out
         } catch (e: Exception) {
@@ -48,6 +50,7 @@ class SpeakerProfileStore(private val modelsDir: String) {
             o.put("id", p.id)
             o.put("name", p.name)
             o.put("createdAt", p.createdAt)
+            o.put("transcribe", p.transcribe)
             val ea = JSONArray()
             p.emb.forEach { ea.put(it.toDouble()) }
             o.put("emb", ea)
@@ -64,7 +67,7 @@ class SpeakerProfileStore(private val modelsDir: String) {
         if (emb.isEmpty()) return false
         val list = load()
         if (list.isNotEmpty() && list[0].emb.size != emb.size) return false
-        list.add(SpeakerProfile(UUID.randomUUID().toString(), name, emb, System.currentTimeMillis()))
+        list.add(SpeakerProfile(UUID.randomUUID().toString(), name, emb, System.currentTimeMillis(), true))
         return save(list)
     }
 

@@ -35,6 +35,7 @@ class FirstRunActivity : LsActivity() {
     private lateinit var host: LinearLayout
     private var pad = 14
     private val REQ_PICK = 400   // 手动选模型文件的 SAF 请求码
+    private val REQ_PICK_TREE = 500   // 选整个文件夹（目录树）的 SAF 请求码
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -145,8 +146,14 @@ class FirstRunActivity : LsActivity() {
                 text = "② 手动选择模型文件（.onnx + tokens.txt 一起选）"
                 setOnClickListener { pickModelFiles() }
             })
+            // ③ 选整个文件夹：直接挑放模型的目录（含子目录），最省事；和设置页同一套逻辑
+            host.addView(Button(this).apply {
+                text = "③ 选整个文件夹（自动找模型）"
+                setOnClickListener { pickModelDir() }
+            })
             host.addView(hint("手动选择的用法：在弹出的文件管理器里进入放着模型的文件夹，\n" +
-                    "把 model.int8.onnx 和 tokens.txt 两个一起勾上 → 打开/完成。"))
+                    "把 model.int8.onnx 和 tokens.txt 两个一起勾上 → 打开/完成。\n" +
+                    "选整个文件夹：挑中放模型的那个目录即可，会自动搜子目录。"))
         }
         host.addView(Button(this).apply {
             text = "打开完整设置（选整个文件夹 / 全盘授权）"
@@ -203,18 +210,39 @@ class FirstRunActivity : LsActivity() {
         }
     }
 
+    /** ③ 选整个文件夹：ACTION_OPEN_DOCUMENT_TREE，委托 ModelScanner 搜子目录并落地 */
+    private fun pickModelDir() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        try { startActivityForResult(i, REQ_PICK_TREE) } catch (e: Exception) {
+            Toast.makeText(this, "打不开文件夹选择器：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
-        if (req != REQ_PICK || res != Activity.RESULT_OK || data == null) return
-        val uris = ArrayList<Uri>()
-        data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
-        data.data?.let { uris.add(it) }
-        if (uris.isEmpty()) return
-        Toast.makeText(this, "正在导入 ${uris.size} 个文件…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val msg = try { ModelScanner.importUris(this, uris, Prefs.modelsDir(this)) } catch (e: Exception) { "导入失败：${e.message?.take(80)}" }
-            runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); render() }
-        }.start()
+        if (data == null || res != Activity.RESULT_OK) return
+        when (req) {
+            REQ_PICK -> {
+                val uris = ArrayList<Uri>()
+                data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
+                data.data?.let { uris.add(it) }
+                if (uris.isEmpty()) return
+                Toast.makeText(this, "正在导入 ${uris.size} 个文件…", Toast.LENGTH_SHORT).show()
+                Thread {
+                    val msg = try { ModelScanner.importUris(this, uris, Prefs.modelsDir(this)) } catch (e: Exception) { "导入失败：${e.message?.take(80)}" }
+                    runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); render() }
+                }.start()
+            }
+            REQ_PICK_TREE -> {
+                val tree = data.data ?: return
+                Toast.makeText(this, "正在扫描所选文件夹（含子目录）…", Toast.LENGTH_SHORT).show()
+                Thread {
+                    val msg = try { ModelScanner.importTree(contentResolver, tree, Prefs.modelsDir(this)) }
+                    catch (e: Exception) { "导入失败：${e.message?.take(80)}" }
+                    runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); render() }
+                }.start()
+            }
+        }
     }
 
     // ---- 第 3 步：给孩子看的三句话 ----

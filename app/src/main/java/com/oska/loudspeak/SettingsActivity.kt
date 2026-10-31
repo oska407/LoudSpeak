@@ -97,6 +97,9 @@ class SettingsActivity : LsActivity() {
     private lateinit var seekAnnFont: SeekBar  // 标注字号 8..16sp
     private lateinit var tvAnnFont: TextView
     private lateinit var btnEditPronouns: View
+    // 声纹：每个已登记的人一个「加不加名字」开关（运行时按档案动态生成）
+    private lateinit var llSpkToggles: LinearLayout
+    private lateinit var tvSpkNone: TextView
 
     // 外观页
     private lateinit var rgColor: RadioGroup
@@ -158,6 +161,8 @@ class SettingsActivity : LsActivity() {
         refreshLevel()
         refreshNet()
         refreshSpkStatus()
+        // 从模型页录完/删完人回来，标注页的逐人开关要跟着变
+        if (::llSpkToggles.isInitialized) rebuildSpkToggles()
     }
 
     // ================= 标签 =================
@@ -421,6 +426,8 @@ class SettingsActivity : LsActivity() {
         seekAnnFont = findViewById(R.id.seekAnnFont)
         tvAnnFont = findViewById(R.id.tvAnnFont)
         btnEditPronouns = findViewById(R.id.btnEditPronouns)
+        llSpkToggles = findViewById(R.id.llSpkToggles)
+        tvSpkNone = findViewById(R.id.tvSpkNone)
     }
 
     private fun initMark() {
@@ -463,6 +470,48 @@ class SettingsActivity : LsActivity() {
                 .setMessage(com.oska.loudspeak.core.Annotator.legend() + "\n\n（这些都能在上面逐项关掉）")
                 .setPositiveButton("知道了", null)
                 .show()
+        }
+        // 声纹：铺出每个人的开关，并给一个进「录入/管理」的入口（切到模型页，那里有全套）
+        rebuildSpkToggles()
+        findViewById<Button>(R.id.btnSpkManage).setOnClickListener { selectTab(4) }   // 4 = 「模型」页（声纹录入/装模型都在那）
+    }
+
+    /**
+     * 声纹逐人开关。
+     *
+     * 为什么放在「标注」页：用户反馈「入录声纹后在标注里找不到每个声纹的开关」——
+     * 原来它埋在「模型」页的二级弹窗里（管理已登记的声纹 → 点名字 → 关闭标注），
+     * 等于没有。现在按档案直接铺成一行一个人，一眼能关。
+     */
+    private fun rebuildSpkToggles() {
+        if (!::llSpkToggles.isInitialized) return
+        llSpkToggles.removeAllViews()
+        val list = SpeakerProfileStore(Prefs.modelsDir(this)).load()
+        tvSpkNone.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+        val d = resources.displayMetrics.density
+        for (p in list) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, (6 * d).toInt(), 0, (6 * d).toInt())
+            }
+            row.addView(TextView(this).apply {
+                text = p.name
+                textSize = 15f
+                setTextColor(Skin.palette(this@SettingsActivity).text)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(Switch(this).apply {
+                isChecked = p.transcribe
+                setOnCheckedChangeListener { _, v ->
+                    // 只改这一个人的这一位，别整表覆盖（避免把别人的改动冲掉）
+                    val st = SpeakerProfileStore(Prefs.modelsDir(this@SettingsActivity))
+                    val l = st.load()
+                    val i = l.indexOfFirst { it.id == p.id }
+                    if (i >= 0) { l[i] = l[i].copy(transcribe = v); st.save(l) }
+                }
+            })
+            llSpkToggles.addView(row)
         }
     }
 
@@ -950,6 +999,11 @@ class SettingsActivity : LsActivity() {
         btnSpkLoad.setOnClickListener { loadSpeakerDialog() }
         btnSpkAdd.setOnClickListener { addSpeakerFlow() }
         btnSpkManage.setOnClickListener { manageSpeakers() }
+        findViewById<Button>(R.id.btnSpkPickFile)?.setOnClickListener { pickSpkFile() }
+        findViewById<android.widget.Switch>(R.id.swLowVol)?.apply {
+            isChecked = Prefs.annotLowVol(this@SettingsActivity)
+            setOnCheckedChangeListener { _, c -> Prefs.setAnnotLowVol(this@SettingsActivity, c) }
+        }
         refreshSpkStatus()
         refreshNet()
     }
@@ -1133,9 +1187,10 @@ class SettingsActivity : LsActivity() {
     }
 
     private fun speakerActions(p: SpeakerProfile) {
+        val toggle = if (p.transcribe) "关闭标注（不转写这句）" else "开启标注（转写这句）"
         AlertDialog.Builder(this)
             .setTitle(p.name)
-            .setItems(arrayOf("改名", "删除")) { _, which ->
+            .setItems(arrayOf("改名", "删除", toggle)) { _, which ->
                 when (which) {
                     0 -> renameSpeaker(p)
                     1 -> {
@@ -1143,10 +1198,46 @@ class SettingsActivity : LsActivity() {
                         Toast.makeText(this, "已删除：${p.name}", Toast.LENGTH_SHORT).show()
                         refreshSpkStatus()
                     }
+                    2 -> toggleTranscribe(p)
                 }
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun toggleTranscribe(p: SpeakerProfile) {
+        val store = SpeakerProfileStore(Prefs.modelsDir(this))
+        val l = store.load()
+        val i = l.indexOfFirst { it.id == p.id }
+        if (i >= 0) { l[i] = l[i].copy(transcribe = !l[i].transcribe); store.save(l) }
+        Toast.makeText(this,
+            if (l.getOrNull(i)?.transcribe == true) "已开启「${p.name}」标注" else "已关闭「${p.name}」标注",
+            Toast.LENGTH_SHORT).show()
+        refreshSpkStatus()
+    }
+
+    /** 从文件管理器选声纹模型 .onnx（可多选：fp16/int8…），直接复制到 spk/ 目录 */
+    private fun pickSpkFile() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        try { startActivityForResult(i, 203) } catch (e: Exception) {
+            Toast.makeText(this, "打不开文件选择器：${e.message?.take(60)}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun importSpkFiles(uris: List<android.net.Uri>) {
+        val eng = SpeakerEngine(Prefs.modelsDir(this))
+        var ok = 0; var fail = 0
+        for (u in uris) {
+            val name = com.oska.loudspeak.core.ModelScanner.queryName(this, u) ?: continue
+            if (!name.endsWith(".onnx", true)) continue
+            if (eng.importUri(this, u, name)) ok++ else fail++
+        }
+        Toast.makeText(this, "声纹模型已导入 $ok 个${if (fail > 0) "，失败 $fail 个" else ""}", Toast.LENGTH_LONG).show()
+        refreshSpkStatus()
     }
 
     private fun renameSpeaker(p: SpeakerProfile) {
@@ -1230,6 +1321,13 @@ class SettingsActivity : LsActivity() {
             data.data?.let { uris.add(it) }
             if (uris.isNotEmpty()) importPicked(uris)
         }
+        // 203 = 声纹模型文件（.onnx）多选
+        if (req == 203 && res == Activity.RESULT_OK && data != null) {
+            val uris = ArrayList<android.net.Uri>()
+            data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i)?.uri?.let { uris.add(it) } }
+            data.data?.let { uris.add(it) }
+            if (uris.isNotEmpty()) importSpkFiles(uris)
+        }
     }
 
     /** 手选的若干文件 → ModelScanner 统一分类落位（与首次引导 / 主界面同一套逻辑） */
@@ -1246,77 +1344,19 @@ class SettingsActivity : LsActivity() {
     }
 
     /**
-     * SAF：把所选目录（含子目录）里的 ASR 文件装上对应位置。
-     * 早先只查一层、只认两个死文件名，所以「选了目录却什么也没导入」。
+     * SAF 目录树导入：委托给 ModelScanner（首次引导与设置页共用同一套逻辑）。
+     * 早先只在设置页有这入口，且埋在二级页里；现在抽到 ModelScanner，首次引导也能直接调。
      */
     private fun importModels(treeUri: Uri) {
         tvModelStatus.text = "导入中…（扫描所选目录含子目录，请勿离开）"
         asrExecutor.execute {
-            try {
-                val cr = contentResolver
-                val rootId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
-                val onnx = ArrayList<Pair<String, Uri>>()
-                val tokens = ArrayList<Pair<String, Uri>>()
-                walkTree(cr, treeUri, rootId, onnx, tokens, 0)
-
-                var asrOk = false
-                if (onnx.isNotEmpty() && tokens.isNotEmpty()) {
-                    val destAsr = File(Prefs.modelsDir(this), "asr").apply { mkdirs() }
-                    val best = onnx.maxByOrNull { scoreName(it.first) }!!
-                    copyFrom(cr, best.second, File(destAsr, "model.int8.onnx"))
-                    copyFrom(cr, tokens.first().second, File(destAsr, "tokens.txt"))
-                    asrOk = File(destAsr, "model.int8.onnx").isFile && File(destAsr, "tokens.txt").isFile
-                }
-                runOnUiThread {
-                    Toast.makeText(this, buildString {
-                        append("导入：ASR ")
-                        append(if (asrOk) "✓" else if (onnx.isEmpty() && tokens.isEmpty()) "未选到" else "✗（缺 onnx 或 tokens）")
-                    }, Toast.LENGTH_LONG).show()
-                    refreshModelStatus()
-                }
-            } catch (e: Exception) {
-                runOnUiThread { tvModelStatus.text = "导入失败：${e.message?.take(120)}" }
+            val msg = try { ModelScanner.importTree(contentResolver, treeUri, Prefs.modelsDir(this)) }
+            catch (e: Exception) { "导入失败：${e.message?.take(120)}" }
+            runOnUiThread {
+                tvModelStatus.text = "导入结果：$msg"
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                refreshModelStatus()
             }
         }
     }
-
-    private fun walkTree(
-        cr: android.content.ContentResolver, treeUri: Uri, dirId: String,
-        onnx: MutableList<Pair<String, Uri>>, tokens: MutableList<Pair<String, Uri>>, depth: Int
-    ) {
-        if (depth > 4) return
-        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId)
-        cr.query(children, arrayOf(
-            android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
-        ), null, null, null)?.use { c ->
-            while (c.moveToNext()) {
-                val id = c.getString(0); val name = c.getString(1) ?: continue; val mime = c.getString(2)
-                if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
-                    walkTree(cr, treeUri, id, onnx, tokens, depth + 1); continue
-                }
-                val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-                when {
-                    name.equals("tokens.txt", true) -> tokens.add(name to uri)
-                    name.endsWith(".onnx", true) -> onnx.add(name to uri)
-                }
-            }
-        }
-    }
-
-    private fun scoreName(n: String): Int {
-        val s = n.lowercase()
-        var v = 0
-        if (s.contains("sense")) v += 6
-        if (s.contains("model")) v += 3
-        if (s.contains("int8")) v += 2
-        return v
-    }
-
-    private fun copyFrom(cr: android.content.ContentResolver, uri: Uri, dst: File): Boolean = try {
-        cr.openInputStream(uri)?.use { input ->
-            dst.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
-        } != null
-    } catch (_: Exception) { false }
 }
