@@ -134,11 +134,16 @@ class SessionViewActivity : LsActivity() {
         val sc = ScrollView(this).apply { addView(tv) }
         right.addView(sc, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        wave = WaveformView(TextView(this).apply {
+        // WaveformView 是绘制包装器（不是 View 子类），必须套一个真正的 View 宿主
+        val waveHost = object : View(this) {
+            val wf = WaveformView(this)
+            override fun onDraw(c: android.graphics.Canvas) = wf.onDraw(c)
+        }.apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, (resources.displayMetrics.density * 56).toInt())
-        })
-        right.addView(wave)
+        }
+        wave = waveHost.wf
+        right.addView(waveHost)
 
         timeTv = TextView(this).apply {
             text = "00:00 / 00:00"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt())

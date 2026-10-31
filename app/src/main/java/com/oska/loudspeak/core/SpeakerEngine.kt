@@ -13,7 +13,7 @@ import java.io.File
  * 算出一个声纹向量。聚类/按名字比对交给上层（sherpa 自带 SpeakerEmbeddingManager）。
  *
  * 和 ASR 共用同一个 sherpa-onnx AAR（1.13.8），不额外加依赖。
- * 模型放置：<modelsDir>/spk/*.onnx（fp16 约 14MB / int8 约 8MB / fp32 约 27MB）。
+ * 模型放置：<modelsDir>/spk/ 目录下的 .onnx 文件（fp16 约 14MB / int8 约 8MB / fp32 约 27MB）。
  * 缺文件 → available=false；加载失败 → available=false 并如实写明原因。
  */
 class SpeakerEngine(private val modelsDir: String) {

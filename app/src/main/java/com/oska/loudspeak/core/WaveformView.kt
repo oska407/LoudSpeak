@@ -132,6 +132,9 @@ class WaveformView(v: View) {
         view.invalidate()
     }
 
+    /** 主动重绘宿主（外部改了 playhead/startFrac 后调用） */
+    fun invalidate() { view.invalidate() }
+
     fun onDraw(c: Canvas) {
         val w = view.width.toFloat(); val h = view.height.toFloat()
         val mid = h / 2f
