@@ -2,6 +2,7 @@ package com.oska.loudspeak.core
 
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -27,6 +28,12 @@ class ReplayController(
     private val onState: (State) -> Unit,
     private val onPosition: (posMs: Long, totalMs: Long) -> Unit
 ) {
+    companion object {
+        /** ①档（mp4 音轨，录制端无增益可设、无兜底）→ +12dB */
+        const val VIDEO_GAIN_MB = 1200
+        /** ②档（audio.wav 写盘时已归一化到 -6dBFS）→ 再补 +6dB 刚好贴住 0dBFS */
+        const val AUDIO_GAIN_MB = 600
+    }
     enum class State { IDLE, PLAYING, PAUSED, ENDED }
 
     private val audioFile = File(dir, "audio.wav")
@@ -46,6 +53,8 @@ class ReplayController(
     private var videoView: VideoView? = null
     /** VideoView 内部的 MediaPlayer：视频倍速只能通过它设（VideoView.setPlaybackSpeed 是 @hide） */
     private var videoMp: MediaPlayer? = null
+    /** 回放响度增强器（挂在当前播放器上，换源时重建） */
+    private var loudness: LoudnessEnhancer? = null
     private var state = State.IDLE
     private var curSeg = 0
     private var speed = 1.0f
@@ -90,6 +99,7 @@ class ReplayController(
             videoMp = it
             // 每次（重新）准备都会把倍速重置回 1.0，这里重新落一遍当前倍速
             applyVideoSpeed()
+            attachLoudness(it)
             if (pendingSeekMs >= 0) {
                 it.seekTo((pendingSeekMs - segStart.getOrElse(curSeg) { 0L }).toInt())
                 pendingSeekMs = -1
@@ -108,6 +118,7 @@ class ReplayController(
             audioMp = MediaPlayer().apply { setDataSource(audioFile.absolutePath) }
             audioMp?.setOnCompletionListener { onAudioDone() }
             audioMp?.prepare()
+            attachLoudness(audioMp)
             audioReady = true
             totalMs = (audioMp?.duration ?: 0).toLong().coerceAtLeast(0)
             applySpeed()
@@ -183,6 +194,46 @@ class ReplayController(
         try { mp.playbackParams = mp.playbackParams.setSpeed(speed) } catch (_: Exception) {}
     }
 
+    // ---------- 回放音量 ----------
+
+    /**
+     * 给当前播放器挂一个响度增强（①档 +12dB / ②档 +6dB，见 companion 常量）。
+     *
+     * 为什么必须在**播放**这一侧做：
+     * - 录音端 `AudioEngine` 走 `AudioSource.MIC` 直采，没有 AGC，孩子离手机一米说话
+     *   电平常在 -30dBFS 以下；②档的 audio.wav 已经在写盘时做了峰值归一化兜底。
+     * - ①档的 mp4 音轨是 CameraX `withAudioEnabled()` 用 MediaRecorder 录的，
+     *   录制端根本没有增益可设，只能在播放时补，且没有任何兜底 → 给足 +12dB。
+     * - 而 `MediaPlayer.setVolume` 上限就是 1.0（只能减不能加），放大只有
+     *   `LoudnessEnhancer`(API 19+) 这一条公开路子。
+     *
+     * 挂载时机：`getAudioSessionId()` 要等 prepare 之后才有值，所以两处都在 prepare 完
+     * （视频是 onPrepared 回调）再挂；每次换源都重建，因为 sessionId 可能变。
+     *
+     * 兜底：个别国内 ROM 把 AudioEffect 裁了，构造或设置会抛 / 返回非 SUCCESS。
+     * 这里一律静默吞掉 —— ②档还有 wav 归一化保底，①档退化成原始音量，
+     * 总比让播放直接崩掉强。
+     */
+    private fun attachLoudness(mp: MediaPlayer?) {
+        releaseLoudness()
+        val id = try { mp?.audioSessionId ?: 0 } catch (_: Throwable) { 0 }
+        if (id <= 0) return
+        val gain = if (useVideo) VIDEO_GAIN_MB else AUDIO_GAIN_MB
+        // 先建对象、再设参数：setTargetGain 抛异常时不能把已构造的句柄漏掉（AudioEffect 是系统资源）
+        val le = try { LoudnessEnhancer(id) } catch (_: Throwable) { null } ?: return
+        val ok = try {
+            le.setTargetGain(gain)
+            le.enabled = true
+            true
+        } catch (_: Throwable) { false }
+        if (ok) loudness = le else { try { le.release() } catch (_: Throwable) {} }
+    }
+
+    private fun releaseLoudness() {
+        try { loudness?.release() } catch (_: Throwable) {}
+        loudness = null
+    }
+
     // ---------- 句导航 ----------
 
     fun seekSentence(i: Int) { if (i in sentences.indices) seek(sentences[i].tStartMs) }
@@ -234,6 +285,7 @@ class ReplayController(
     }
 
     fun release() {
+        releaseLoudness()
         try { audioMp?.release() } catch (_: Exception) {}
         ticker.removeCallbacks(tick)
         videoView = null; audioMp = null; videoMp = null

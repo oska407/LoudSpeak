@@ -106,7 +106,32 @@ class AudioEngine(
         val i16 = { v: Int -> b.write(v and 0xFF); b.write(v shr 8 and 0xFF) }
         w("RIFF"); i32(36 + dataLen); w("WAVE"); w("fmt "); i32(16); i16(1); i16(1)
         i32(SR); i32(SR * 2); i16(2); i16(16); w("data"); i32(dataLen)
-        for (s in pcm) { val v = (s * 32767).toInt().coerceIn(-32768, 32767); i16(v) }
+        val g = normGain(pcm)   // 落盘前补增益（回放太小，见 normGain 注释）
+        for (s in pcm) { val v = (s * g * 32767).toInt().coerceIn(-32768, 32767); i16(v) }
         return b.toByteArray()
+    }
+
+    /**
+     * 写盘增益。
+     *
+     * 为什么要有：AudioRecord 用 `AudioSource.MIC` 直采，没有任何 AGC。孩子站在
+     * 一米外说话，电平常在 -30dBFS 上下，而 MediaPlayer 的音量上限就是 1.0（放大不了），
+     * 于是回放听着"很小声"。在写盘这一刻把峰值拉到 -6dBFS 最省事，且**不影响 ASR**
+     * （识别用的是内存里的原始 PCM，不走这条路）。
+     *
+     * 为什么目标是 -6 而不是 -3：回放器 [ReplayController] 还会再挂 +6dB 的
+     * LoudnessEnhancer 做二次补偿，两边加起来正好压在 0dBFS 附近留一点余量，
+     * 不至于让 limiter 把动态压扁。
+     *
+     * 三条约束：
+     * - 只放大不衰减（`coerceIn(1f, …)`）：本来录得响的句子保持原样，不会被压小；
+     * - 封顶 8x（+18dB）：纯静音段不至于把底噪拉成"沙沙"声；
+     * - 峰值低于 0.0005（≈ -66dBFS）视为静音，直接不放大。
+     */
+    private fun normGain(pcm: FloatArray): Float {
+        var peak = 0f
+        for (s in pcm) { val a = if (s < 0f) -s else s; if (a > peak) peak = a }
+        if (peak <= 0.0005f) return 1f
+        return (0.5012f / peak).coerceIn(1f, 8f)   // 0.5012 ≈ -6dBFS
     }
 }
