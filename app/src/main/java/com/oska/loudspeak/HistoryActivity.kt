@@ -126,10 +126,19 @@ class HistoryActivity : LsActivity() {
                         load()
                     }
                 }
+                val dirF = File(r.dirPath)
+                val hasVid = dirF.listFiles { f: File -> f.name.endsWith(".mp4") }?.isNotEmpty() == true
+                val displayName = store.readTitle(dirF) ?: store.sessionLabel(r.sessionId)
+                val badge = TextView(this@HistoryActivity).apply {
+                    text = if (hasVid) "▶" else "♪"
+                    textSize = 18f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (hasVid) 0xFF4FC3F7.toInt() else 0xFF2DA8A0.toInt())
+                    setPadding(pad / 2, 0, pad / 2, 0)
+                }
                 val tv = TextView(this@HistoryActivity).apply {
                     textSize = 15f; setTextColor(0xFFFFFFFF.toInt())
                     text = buildString {
-                        append(store.sessionLabel(r.sessionId))
+                        append(displayName)
                         append("　").append("%02d:%02d".format(r.durationMs / 60000, r.durationMs % 60000 / 1000))
                         append('\n')
                         append("代词 ").append(r.pronounCount)
@@ -140,15 +149,15 @@ class HistoryActivity : LsActivity() {
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 4f)
                     setPadding(pad / 2, 0, pad / 2, 0)
                 }
-                // 长按看详情（§11.3：meta 全字段）
-                tv.setOnLongClickListener { showDetail(r); true }
+                // 长按：改名 / 看详情（§7 列表改名入口之一）
+                tv.setOnLongClickListener { showRowMenu(r); true }
                 // 点整行切换选中
                 tv.setOnClickListener {
                     if (selected.contains(r.sessionId)) selected.remove(r.sessionId) else selected.add(r.sessionId)
                     notifyDataSetChanged(); refreshSelButtons()
                 }
                 val view = Button(this@HistoryActivity).apply {
-                    text = "查看"; textSize = 13f
+                    text = "回看"; textSize = 13f
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     setOnClickListener {
                         startActivity(Intent(this@HistoryActivity, SessionViewActivity::class.java)
@@ -156,7 +165,7 @@ class HistoryActivity : LsActivity() {
                             .putExtra("dirPath", r.dirPath))
                     }
                 }
-                row.addView(cb); row.addView(star); row.addView(tv); row.addView(view)
+                row.addView(cb); row.addView(star); row.addView(badge); row.addView(tv); row.addView(view)
                 return row
             }
         }
@@ -264,6 +273,36 @@ class HistoryActivity : LsActivity() {
             .setNeutralButton("标重点/取消") { _, _ ->
                 store.setStar(r.sessionId, !r.star); load()
             }
+            .show()
+    }
+
+    /** 长按行：改名 / 看详情（§7） */
+    private fun showRowMenu(r: SessionStore.Record) {
+        val items = arrayOf("改名", "查看详情")
+        AlertDialog.Builder(this)
+            .setTitle(store.readTitle(File(r.dirPath)) ?: store.sessionLabel(r.sessionId))
+            .setItems(items) { _, which ->
+                if (which == 0) doRename(r) else showDetail(r)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 改名：只写 meta.json 的 title + 索引表，目录名不动（§7） */
+    private fun doRename(r: SessionStore.Record) {
+        val dirF = File(r.dirPath)
+        val cur = store.readTitle(dirF) ?: store.sessionLabel(r.sessionId)
+        val input = android.widget.EditText(this).apply { setText(cur); textSize = 16f }
+        AlertDialog.Builder(this)
+            .setTitle("改备注名（不改目录）")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val name = input.text.toString().trim()
+                store.setTitle(dirF, name)
+                store.setTitleInDb(r.sessionId, name)
+                load()
+            }
+            .setNegativeButton("取消", null)
             .show()
     }
 

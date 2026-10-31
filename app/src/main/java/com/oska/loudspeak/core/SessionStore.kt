@@ -15,20 +15,23 @@ import java.io.File
  * - SQLite 索引表（§10.4）供历史列表快速加载
  * - 软删除：移入同根 .trash/，路径安全校验（只删本 App 写过的会话目录）
  */
-class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.db", null, 2) {
+class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(
             sessionId TEXT PRIMARY KEY, startedAt INTEGER, durationMs INTEGER,
             pronounCount INTEGER, completeCount INTEGER, incompleteCount INTEGER,
             selfMarkedCount INTEGER, exitKind TEXT, dirPath TEXT,
-            star INTEGER NOT NULL DEFAULT 0)""")
+            star INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL DEFAULT '')""")
     }
 
-    /** v1 → v2：补「星标」列（§11.2 可标重点，便于回看） */
+    /** v1 → v2：补「星标」列（§11.2 可标重点，便于回看）；v2 → v3：补「备注名」列（§7 改名） */
     override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
         if (o < 2) try {
             db.execSQL("ALTER TABLE sessions ADD COLUMN star INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) { /* 已经加过了就不管 */ }
+        if (o < 3) try {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''")
         } catch (_: Exception) { /* 已经加过了就不管 */ }
     }
 
@@ -38,7 +41,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         val sessionId: String, val startedAt: Long, val durationMs: Long,
         val pronounCount: Int, val completeCount: Int, val incompleteCount: Int,
         val selfMarkedCount: Int, val exitKind: String, val dirPath: String,
-        val star: Boolean = false
+        val star: Boolean = false, val title: String? = null
     )
 
     /** 历史排序（§11.2 E5）：0 时间倒序 / 1 不完整句最多优先 */
@@ -129,6 +132,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 .put("selfMarked", s.selfMarked)
                 .put("punct", s.punct)          // 补的标点（不改字）
                 .put("mergePrev", s.mergePrev)  // 并回上一句的碎片
+                .put("lowVol", JSONArray().apply { s.lowVol.forEach { put(if (it) 1 else 0) } }) // 音量不达标逐字标注
                 .put("take", s.take))
         }
         File(dir, "transcript.json").writeText(arr.toString(2))
@@ -143,6 +147,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             put("incompleteCount", r.incompleteCount); put("selfMarkedCount", r.selfMarkedCount)
             put("exitKind", r.exitKind); put("dirPath", r.dirPath)
             put("star", if (r.star) 1 else 0)
+            put("title", r.title ?: "")
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
@@ -164,7 +169,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         if (sinceMs > 0) { if (where.isNotEmpty()) where.append(" AND "); where.append("startedAt>=?"); args.add(sinceMs.toString()) }
         if (untilMs > 0) { if (where.isNotEmpty()) where.append(" AND "); where.append("startedAt<=?"); args.add(untilMs.toString()) }
         val sql = "SELECT sessionId,startedAt,durationMs,pronounCount,completeCount,incompleteCount," +
-                "selfMarkedCount,exitKind,dirPath,star FROM sessions" +
+                "selfMarkedCount,exitKind,dirPath,star,title FROM sessions" +
                 (if (where.isNotEmpty()) " WHERE $where" else "") +
                 when (order) {
                     ORDER_INCOMPLETE -> " ORDER BY incompleteCount DESC, startedAt DESC"
@@ -174,7 +179,8 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         readableDatabase.rawQuery(sql, if (args.isEmpty()) null else args.toTypedArray()).use { c ->
             while (c.moveToNext()) {
                 out.add(Record(c.getString(0), c.getLong(1), c.getLong(2), c.getInt(3), c.getInt(4),
-                    c.getInt(5), c.getInt(6), c.getString(7), c.getString(8), c.getInt(9) == 1))
+                    c.getInt(5), c.getInt(6), c.getString(7), c.getString(8), c.getInt(9) == 1,
+                    c.getString(10).takeIf { it.isNotBlank() }))
             }
         }
         return out
@@ -217,6 +223,8 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 if (fl != null) for (j in 0 until fl.length()) s.flags.add(fl.getString(j))
                 s.punct = o.optString("punct", "")
                 s.mergePrev = o.optBoolean("mergePrev", false)
+                val lv = o.optJSONArray("lowVol")
+                if (lv != null) s.lowVol = BooleanArray(lv.length()) { lv.optInt(it) == 1 }
                 val mz = o.optJSONArray("muzzy")
                 if (mz != null) for (j in 0 until mz.length()) {
                     val p = mz.getJSONObject(j)
@@ -404,7 +412,8 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                         o.getJSONObject("stats").optInt("incompleteCount"),
                         o.getJSONObject("stats").optInt("selfMarkedCount"),
                         o.optString("exitKind", "normal"), target.absolutePath,
-                        o.optBoolean("star", false)))
+                        o.optBoolean("star", false),
+                        o.optString("title", "").takeIf { it.isNotBlank() }))
                 }
                 null
             }
@@ -418,5 +427,30 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
         var n = 0
         trash.listFiles()?.forEach { if (it.deleteRecursively()) n++ }
         return n
+    }
+
+    // ---- 备注名（§7 改名）：只动 meta.json 的 title 字段，目录名完全不动 ----
+
+    /** 读备注名（meta.json.title）；无则 null */
+    fun readTitle(dir: File): String? = try {
+        val o = JSONObject(File(dir, "meta.json").readText())
+        o.optString("title", "").takeIf { it.isNotBlank() }
+    } catch (_: Exception) { null }
+
+    /** 写备注名：只改 meta.json 的 title 一个字段，不重写整份会话 */
+    fun setTitle(dir: File, title: String) {
+        try {
+            val f = File(dir, "meta.json")
+            if (!f.isFile) return
+            val o = JSONObject(f.readText())
+            o.put("title", title)
+            f.writeText(o.toString(2))
+        } catch (_: Exception) {}
+    }
+
+    /** 备注名同步进索引表，列表直接读、不必逐条解 meta.json */
+    fun setTitleInDb(sessionId: String, title: String?) {
+        writableDatabase.execSQL("UPDATE sessions SET title=? WHERE sessionId=?",
+            arrayOf(title ?: "", sessionId))
     }
 }

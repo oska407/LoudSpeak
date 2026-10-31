@@ -108,9 +108,6 @@ class MainActivity : LsActivity() {
     private val main = Handler(Looper.getMainLooper())
     private val asrExecutor = Executors.newSingleThreadExecutor()
     private val ioExecutor = Executors.newSingleThreadExecutor()   // 停止/落盘等重 IO，绝不占主线程
-    private val longPressStop = Runnable {
-        if (state == "recording" || state == "paused") onStopBtn(emotional = true)
-    }
 
     private lateinit var store: SessionStore
     private lateinit var asr: AsrEngine
@@ -118,6 +115,8 @@ class MainActivity : LsActivity() {
 
     private var mode = Prefs.MODE_DISPLAY_VIDEO
     private var sentences = ArrayList<RuleEngine.Sentence>()
+    /** 录音时每 ~50ms 采一帧原始 dB（0..60），index*50ms 即会话时间；用于音量不达标逐字标注 */
+    private val volDb = ArrayList<Int>()
     private var sessionDir: File? = null
     private var sessionStartedAt = 0L
     private var take = 1
@@ -184,7 +183,7 @@ class MainActivity : LsActivity() {
 
         btnRec.setOnClickListener { onRec() }
         btnPause.setOnClickListener { onPauseBtn() }
-        btnStop.setOnClickListener { onStopBtn(emotional = false) }
+        btnStop.setOnClickListener { onStopBtn() }
         btnPlay.setOnClickListener { startReplay(auto = false) }
         btnHistory.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
@@ -196,23 +195,6 @@ class MainActivity : LsActivity() {
         previewBox.bias = Prefs.cropBias(this, curRotation())
         autoFrame()   // 没标定过这个朝向就标；脸出窗就重标（有标定值且脸在窗内则沿用，见 autoFrame）
         setupPreviewDrag()
-
-        // 长按停止 2 秒 = 情绪退出（§12.5）
-        // ⚠️ 必须用专用 Runnable 取消：早先用的 removeCallbacksAndMessages(null)
-        // 会连眼皮条形驱动 tickPlayhead、回放结束延时一并抹掉，导致回放卡住不再结束。
-        btnStop.setOnTouchListener { _, e ->
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    main.removeCallbacks(longPressStop)
-                    main.postDelayed(longPressStop, 2000)
-                    false
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    main.removeCallbacks(longPressStop); false
-                }
-                else -> false
-            }
-        }
 
         // 红晕消退改为在 dispatchTouchEvent 里顺带处理（§7.3）。
         // ⚠️ 绝不能给红晕层挂点击监听：它整屏盖在内容之上，一旦 clickable 就会吞掉
@@ -444,6 +426,7 @@ class MainActivity : LsActivity() {
         lastJudgeOverall = null
         lastFluency = null
         sentences.clear()
+        volDb.clear()
         textArea.reset()
         wave.wf.reset()
         clearGlow()
@@ -471,6 +454,8 @@ class MainActivity : LsActivity() {
             vadSilenceMs = Prefs.vadSilenceMs(this),
             onFrame = { rawL, amp ->
                 main.post {
+                    // 采集原始 dB 时间轴（每 ~50ms 一帧），供「音量不达标逐字标注」用
+                    volDb.add(rawL.toInt().coerceIn(0, 60))
                     // 变色用平滑后的 ema（§6.3.3：瞬时值换气会红绿闪）
                     lcd.lcd.update((audio?.meter?.ema ?: rawL).coerceIn(0f, 60f), Prefs.dbThreshold(this))
                     wave.wf.pushLive(amp)
@@ -487,7 +472,7 @@ class MainActivity : LsActivity() {
                             AlertDialog.Builder(this)
                                 .setMessage("机身有点热了（$t℃）。要不要先歇一下？\n继续也行，讲完这次就停。")
                                 .setPositiveButton("继续录", null)
-                                .setNeutralButton("先停下") { _, _ -> onStopBtn(emotional = false) }
+                                .setNeutralButton("先停下") { _, _ -> onStopBtn() }
                                 .show()
                         }
                     }
@@ -844,7 +829,7 @@ class MainActivity : LsActivity() {
         updateButtons()
     }
 
-    private fun onStopBtn(emotional: Boolean) {
+    private fun onStopBtn() {
         if (state != "recording" && state != "paused") return
         val wasMode = mode
         val dir = sessionDir
@@ -878,11 +863,9 @@ class MainActivity : LsActivity() {
                 }
             }
             main.post {
-                if (emotional) {
-                    // 情绪退出：跳过回放与判定，不产任何评价（§12.5）
-                    if (dir != null) saveSession(elapsed, exitKind = "emotional")
-                    AlertDialog.Builder(this).setMessage("没事，我们下次再来。")
-                        .setPositiveButton("好", null).show()
+                if (wasMode == Prefs.MODE_DISPLAY_VIDEO || wasMode == Prefs.MODE_DISPLAY_AUDIO) {
+                    // ③④ 档：不落盘、不判定、不诊断，停止即回待录（§10.1 / 回放改版 v1 §12）
+                    idleHint()
                 } else {
                     runJudgmentAndDiagnosis(elapsed)
                 }
@@ -920,6 +903,11 @@ class MainActivity : LsActivity() {
         val levels = RuleEngine.levels(count, Prefs.levelOverride(this))
         asrExecutor.execute {
             RuleEngine.evaluate(sentences, levels, Prefs.muzzyEnabled(this), Prefs.pronounList(this))
+            // 音量不达标逐字标注（回放改版补充）：按当前阈值，对每字在音量时间轴上取平均 dB
+            val volThreshold = Prefs.dbThreshold(this)
+            for (s in sentences) if (!s.uncertain) {
+                s.lowVol = RuleEngine.lowVolumeFlags(s.text, s.absWords, s.absMs, volDb, 0L, 50L, volThreshold)
+            }
             // 离线自动判定（§R9）：规则后端默认工作；开了 PC 桥则交给 PC 上的大模型，失败回退规则
             val res = QwenJudge.judge(this, sentences)
             lastJudgeOverall = res.overall

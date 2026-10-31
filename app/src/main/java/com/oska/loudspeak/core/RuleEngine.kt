@@ -107,6 +107,13 @@ object RuleEngine {
         /** 与 [absMs] 一一对应的字表（已剥壳） */
         var absWords: Array<String> = emptyArray(),
 
+        /**
+         * 音量不达标标注（回放改版补充）：true = 这个字说话时平均音量低于阈值。
+         * 长度 = [text].length；录制时按当时阈值算好存进 transcript.json，回放原样恢复，
+         * 不随阈值改变重算（避免改设置后历史回放结果漂走）。
+         */
+        var lowVol: BooleanArray = BooleanArray(0),
+
         // ---- 四层标注（标注多层次设计 v1）：大模型结果挂在句子上 ----
         /** 大模型判出的代词（原文 + 是否歧义）。null = 还没跑模型 / 模型层没开 */
         var modelPronouns: MutableList<ModelPronoun>? = null,
@@ -355,4 +362,64 @@ object RuleEngine {
     /** 第 2 遍改善语（§9.2 步 3）：只呈现改善的部分 */
     fun improvementMessage(prevPronouns: Int, curPronouns: Int): String =
         "第 2 遍，你把 ${prevPronouns - curPronouns} 处「这个」说出了名字。"
+
+    /**
+     * 音量不达标标注（回放改版补充）：逐字判断「这个字说话时音量是否低于阈值」。
+     *
+     * 对齐思路：SenseVoice 的 [absWords]（剥壳后的 token）与 [absMs]（每字会话绝对毫秒）
+     * 一一对应，且 [text] 大致等于各 token 拼接。中文下逐 token 基本是一字一 token，
+     * 用**贪心顺序定位**（从已匹配位置往后找该 token）就能把每个 token 的时间戳
+     * 映射到 [text] 的字符区间；英文子词/标点等匹配不上的 token 跳过（不漂移后续定位）。
+     *
+     * @param volDb 录音时每 ~[volIntervalMs] 一帧的原始 dB（0..60），index 0 对应 [volStartMs]
+     * @param threshold 「达标线」dB，低于即算不达标（[Prefs.dbThreshold]）
+     * @return 长度 = text.length，true = 该字说话时平均音量低于阈值
+     */
+    fun lowVolumeFlags(
+        text: String, absWords: Array<String>, absMs: LongArray,
+        volDb: List<Int>, volStartMs: Long, volIntervalMs: Long, threshold: Int
+    ): BooleanArray {
+        val out = BooleanArray(text.length)
+        val n = minOf(absMs.size, absWords.size)
+        if (n == 0 || volDb.isEmpty()) return out
+        // 逐 token 贪心定位到 text，给覆盖的字符打上该 token 的时间戳
+        val charT = LongArray(text.length) { -1L }
+        var pos = 0
+        for (k in 0 until n) {
+            val w = absWords[k]
+            if (w.isEmpty()) continue
+            val p = text.indexOf(w, pos)
+            if (p < 0) continue
+            val t = absMs[k]
+            for (j in p until minOf(p + w.length, text.length)) charT[j] = t
+            pos = p + w.length
+        }
+        // 没匹配到的字符（句首/句尾零星字）：用句首或句尾时间戳兜底
+        for (i in text.indices) {
+            val t = if (charT[i] >= 0) charT[i]
+            else if (i < text.length / 2) absMs.first() else absMs.last()
+            if (volAt(volDb, volStartMs, volIntervalMs, t) < threshold) out[i] = true
+        }
+        return out
+    }
+
+    /** 在时间轴上取某时刻附近 ±50ms 的 dB 平均；窗口内无样本则取最近样本 */
+    private fun volAt(volDb: List<Int>, startMs: Long, intervalMs: Long, tMs: Long): Int {
+        if (volDb.isEmpty()) return 60
+        val lo = tMs - 50; val hi = tMs + 50
+        var sum = 0; var cnt = 0
+        for (i in volDb.indices) {
+            val tt = startMs + i * intervalMs
+            if (tt in lo..hi) { sum += volDb[i]; cnt++ }
+        }
+        if (cnt == 0) {
+            var best = volDb[0]; var bd = Long.MAX_VALUE
+            for (i in volDb.indices) {
+                val d = kotlin.math.abs(startMs + i * intervalMs - tMs)
+                if (d < bd) { bd = d; best = volDb[i] }
+            }
+            return best
+        }
+        return sum / cnt
+    }
 }

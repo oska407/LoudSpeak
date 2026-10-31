@@ -7,6 +7,8 @@ import android.text.style.UnderlineSpan
 import android.text.method.LinkMovementMethod
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ClickableSpan
+import android.text.style.CharacterStyle
+import android.text.TextPaint
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -24,6 +26,18 @@ import android.widget.TextView
  *
  * 全部开关在设置里可逐项关；主开关关掉则只显示纯文字 + 必要的「?」。
  */
+/**
+ * 彩色下划线（音量不达标标注用）：API 29+ 用 [TextPaint.underlineColor] 画指定颜色的下划线，
+ * 这样「音量低」的蓝下划线和「代词」的红下划线能并存不混；旧版本退化为普通下划线
+ * （用文字当前颜色），靠颜色/位置区分。设备是 ColorOS 14（API 34），underlineColor 可用。
+ */
+private class ColoredUnderlineSpan(private val color: Int) : CharacterStyle() {
+    override fun updateDrawState(tp: TextPaint) {
+        tp.isUnderlineText = true
+        if (android.os.Build.VERSION.SDK_INT >= 29) tp.underlineColor = color
+    }
+}
+
 object Annotator {
 
     /** L4 展开状态：存句子 index。点一下句末的「→」展开改写，再点收起。 */
@@ -66,6 +80,7 @@ object Annotator {
     val C_L2     = 0xFFF5A623.toInt()   // L2 不完整句：橙
     val C_L3     = 0xFFB8860B.toInt()   // L3 指代歧义：暗金（比 L2 橙弱一档，不抢眼）
     val C_L4     = 0xFF2DA8A0.toInt()   // L4 更清楚的说法：蓝绿
+    val C_LOWVOL = 0xFF4F9BE8.toInt()   // 音量不达标：蓝（与代词红/句式橙/L4 蓝绿都不同）
 
     // 「说得顺不顺」（R12）单独一套颜色：用青蓝，避开代词红 / 句式橙，别跟现有标注打架
     val C_FLUENCY_HEAD = 0xFF546E7A.toInt()   // 小标题：跟章节分隔线一个调子
@@ -183,6 +198,25 @@ object Annotator {
                     }
                 }
                 if (idx < s.text.length) sb.append(s.text.substring(idx))
+                // 音量不达标：文字下方的蓝色下划线（独立于四层标注，跟主开关走）。
+                // body 区可能插入了歧义「?」等标记，先用 text→sb 映射把下标对齐，
+                // 再对每个 lowVol 字挂一截蓝色下划线。
+                if (s.lowVol.isNotEmpty()) {
+                    val bodyEnd = sb.length
+                    val lvMap = IntArray(s.text.length) { -1 }
+                    var ptx = 0; var psb = sentStart
+                    while (ptx < s.text.length && psb < bodyEnd) {
+                        if (psb < sb.length && sb[psb] == s.text[ptx]) {
+                            lvMap[ptx] = psb; ptx++; psb++
+                        } else psb++   // 歧义?等插入字符，跳过
+                    }
+                    for (i in s.text.indices) {
+                        if (i < s.lowVol.size && s.lowVol[i] && lvMap[i] >= 0) {
+                            sb.setSpan(ColoredUnderlineSpan(C_LOWVOL), lvMap[i], lvMap[i] + 1,
+                                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                    }
+                }
                 // 补上的句末标点（Punctuator），淡一点，别跟正文抢注意力
                 if (s.punct.isNotEmpty()) {
                     val ps = sb.length
