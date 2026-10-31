@@ -53,6 +53,7 @@ import com.oska.loudspeak.core.RuleEngine
 import com.oska.loudspeak.core.SessionStore
 import com.oska.loudspeak.core.Skin
 import com.oska.loudspeak.core.WaveformView
+import com.oska.loudspeak.core.ReplayController
 import com.oska.loudspeak.core.Ui
 import java.io.File
 import java.util.concurrent.Executors
@@ -129,10 +130,10 @@ class MainActivity : LsActivity() {
     private var videoRecording: androidx.camera.video.Recording? = null
     private var videoSegIndex = 0
 
-    // 回放
-    private var audioPlayer: MediaPlayer? = null
-    private var replayTotalMs = 0L
-    private var autoReplayEndMs = -1L
+    // 回放（接新内核 ReplayController，§3/§4；修多段视频 firstOrNull 只回放首段）
+    private var replayCtrl: ReplayController? = null
+    /** 回放波形概览格数：按屏宽自适应，约 3px/格（§4） */
+    private val replayBars get() = (resources.displayMetrics.widthPixels / 3).coerceIn(200, 1200)
 
     private var state = "idle" // idle / recording / paused / replay / diag
     private var asrLoading = false
@@ -184,7 +185,7 @@ class MainActivity : LsActivity() {
         btnRec.setOnClickListener { onRec() }
         btnPause.setOnClickListener { onPauseBtn() }
         btnStop.setOnClickListener { onStopBtn() }
-        btnPlay.setOnClickListener { startReplay(auto = false) }
+        btnPlay.setOnClickListener { onPlayBtn() }
         btnHistory.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         btnMode.setOnClickListener { startActivity(Intent(this, ModeSelectActivity::class.java)) }
@@ -200,7 +201,7 @@ class MainActivity : LsActivity() {
         // ⚠️ 绝不能给红晕层挂点击监听：它整屏盖在内容之上，一旦 clickable 就会吞掉
         // ACTION_DOWN，底部七键全部按不动（真机「点录音没反应」即此）。
 
-        wave.wf.onSeek = { p -> seekPlayback(p) }
+        wave.wf.onSeek = { p -> if (state == "replay") replayCtrl?.seek((p * (replayCtrl?.getTotalMs() ?: 0)).toLong()) }
         btnSkipReplay.setOnClickListener { endReplay(showDiagnosis = true) }
         findViewById<Button>(R.id.btnRetake).setOnClickListener { onRetake() }
         // 关闭诊断必须回到 idle：否则 state 停在 diag，录音键会一直灰着没路出来
@@ -363,14 +364,21 @@ class MainActivity : LsActivity() {
 
     private fun updateButtons() {
         btnRec.isEnabled = state == "idle"
-        btnPause.isEnabled = state == "recording" || state == "paused"
-        btnPause.text = if (state == "paused") "继续" else "暂停"
-        btnStop.isEnabled = state == "recording" || state == "paused"
-        btnPlay.isEnabled = (state == "idle" || state == "diag") && sessionDir != null &&
+        btnPause.isEnabled = state == "recording" || state == "paused" || state == "replay"
+        btnPause.text = when (state) {
+            "paused" -> "继续"
+            "replay" -> if (replayCtrl?.currentState() == ReplayController.State.PAUSED) "继续" else "暂停"
+            else -> "暂停"
+        }
+        btnStop.isEnabled = state == "recording" || state == "paused" || state == "replay"
+        btnStop.text = if (state == "replay") "停止回放" else "停止"
+        btnPlay.isEnabled = (state == "idle" || state == "diag" || state == "replay") && sessionDir != null &&
                 mode != Prefs.MODE_DISPLAY_VIDEO && mode != Prefs.MODE_DISPLAY_AUDIO
+        btnPlay.text = if (state == "replay" &&
+            replayCtrl?.currentState() == ReplayController.State.ENDED) "重播" else "播放"
         btnMode.isEnabled = state == "idle"
-        btnSettings.isEnabled = state != "recording"
-        btnHistory.isEnabled = state != "recording"
+        btnSettings.isEnabled = state != "recording" && state != "replay"
+        btnHistory.isEnabled = state != "recording" && state != "replay"
     }
 
     private fun updateModeBadge() {
@@ -810,7 +818,19 @@ class MainActivity : LsActivity() {
 
     // ================= 暂停 / 停止（§12.2 步 6–7） =================
 
+    /** 播放键：replay 态=继续/重播；diag/idle 态且录过=进就地回放（§12.4） */
+    private fun onPlayBtn() {
+        when (state) {
+            "replay" -> replayCtrl?.let {
+                if (it.currentState() == ReplayController.State.ENDED) it.seek(0)
+                it.play()
+            }
+            "diag", "idle" -> if (sessionDir != null) startReplay()
+        }
+    }
+
     private fun onPauseBtn() {
+        if (state == "replay") { replayCtrl?.pause(); updateButtons(); return }
         when (state) {
             "recording" -> { audio?.pause(); videoRecording?.pause(); state = "paused" }
             "paused" -> {
@@ -830,6 +850,7 @@ class MainActivity : LsActivity() {
     }
 
     private fun onStopBtn() {
+        if (state == "replay") { endReplay(showDiagnosis = true); return }
         if (state != "recording" && state != "paused") return
         val wasMode = mode
         val dir = sessionDir
@@ -924,85 +945,64 @@ class MainActivity : LsActivity() {
 
                 if (sessionDir != null) saveSession(elapsedMs, exitKind = "normal")
                 val hasProblem = sentences.any { it.isProblem }
-                if (hasProblem && sessionDir != null) startReplay(auto = true)
+                if (hasProblem && sessionDir != null) startReplay()
                 else showDiagnosis()
             }
         }
     }
 
-    /** 回放（仅 ①② 档）：自动播最有价值的一句前 0.3s 起，约 8 秒；明显可跳过（§12.4） */
-    private fun startReplay(auto: Boolean) {
+    /**
+     * 录完就地回放（仅 ①② 档，§12.4 / 回放改版 v1）：
+     * 接新内核 ReplayController + WaveformView v2，修多段视频只回放首段 bug。
+     * 进场 A：暂停态、播放头定位首问题句开头（①）/ 0（②），**不自动出声**。
+     * 波形可拖、气泡、句分隔都在 v2 里；播放/暂停/停止三键接 replayCtrl。
+     */
+    private fun startReplay() {
         val dir = sessionDir ?: return
-        state = "replay"
-        updateButtons()
-
         val audioFile = File(dir, "audio.wav")
         if (!audioFile.isFile) { showDiagnosis(); return }
+        state = "replay"
+        btnSkipReplay.visibility = View.VISIBLE
+        updateButtons()
 
+        // 视频取景：回放按「录这一条时」的偏移（meta.json 的 cropBias），不是当前朝向的偏移
+        val hasVideo = mode == Prefs.MODE_FULL
+        if (hasVideo) {
+            replaySavedBias = previewBox.bias
+            previewBox.bias = readSessionBias(dir) ?: previewBox.bias
+            videoView.visibility = View.VISIBLE
+            previewView.visibility = View.GONE
+        }
+
+        val snap = sentences
         asrExecutor.execute {
-            val amps = decodeWavAmplitudes(audioFile, 6000)
+            val amps = decodeWavAmplitudes(audioFile, replayBars)
             main.post {
-                wave.wf.setOverview(amps, 6000L)
-                btnSkipReplay.visibility = View.VISIBLE
+                replayCtrl = ReplayController(dir, hasVideo, snap,
+                    onState = { updateButtons() },
+                    onPosition = { pos, total ->
+                        wave.wf.playhead = if (total > 0) pos.toFloat() / total else 0f
+                        wave.invalidate()
+                        tvDuration.text = "${fmtMs(pos)} / ${fmtMs(total)}"
+                    })
+                if (hasVideo) replayCtrl!!.attachVideoView(videoView)
+                else replayCtrl!!.attachAudio()
 
-                var startMs = 0L
-                var playLen = 8000L
-                if (auto) {
-                    val best = sentences.firstOrNull { it.isProblem && it.pronouns.isNotEmpty() }
-                        ?: sentences.firstOrNull { it.isProblem }
-                    if (best != null) {
-                        startMs = (best.tStartMs - 300).coerceAtLeast(0)
-                        playLen = (best.tEndMs + 500 - startMs).coerceAtLeast(1000)
-                    }
+                val total = replayCtrl!!.getTotalMs()
+                wave.wf.setOverview(amps, total)
+                wave.wf.sentenceFracs = snap.map {
+                    if (total > 0) it.tStartMs.toFloat() / total.toFloat() else 0f
                 }
-
-                if (mode == Prefs.MODE_FULL) {
-                    val video = dir.listFiles()?.firstOrNull { it.name.startsWith("video_seg") }
-                    if (video != null) {
-                        // 回放取景 = 录这段时的偏移（不是「现在」的偏移）：
-                        // mp4 是全幅，偏移只能别的途径带上，落在 meta.json 里。
-                        replaySavedBias = previewBox.bias
-                        previewBox.bias = readSessionBias(dir) ?: previewBox.bias
-                        videoView.visibility = View.VISIBLE
-                        previewView.visibility = View.GONE
-                        videoView.setVideoPath(video.absolutePath)
-                        videoView.setOnPreparedListener { mp ->
-                            replayTotalMs = mp.duration.toLong()
-                            mp.seekTo(startMs.toInt()); mp.start()
-                        }
-                        videoView.start()
-                    }
-                } else {
-                    try {
-                        audioPlayer = MediaPlayer().apply {
-                            setDataSource(audioFile.absolutePath)
-                            prepare()
-                            replayTotalMs = duration.toLong()
-                            seekTo(startMs.toInt())
-                            start()
-                        }
-                    } catch (_: Exception) {}
-                }
-                main.postDelayed({ if (state == "replay") endReplay(showDiagnosis = true) }, playLen)
-                tickPlayhead()
+                wave.wf.onSeek = { p -> if (state == "replay") replayCtrl?.seek((p * total).toLong()) }
+                // 进场 A：定位首问题句 / 0，暂停态、不出声
+                val firstProblem = snap.firstOrNull { it.isProblem }?.tStartMs ?: 0L
+                replayCtrl!!.seek(firstProblem)
             }
         }
     }
 
-    private fun tickPlayhead() {
-        if (state != "replay") return
-        val pos = if (videoView.visibility == View.VISIBLE) videoView.currentPosition.toLong()
-        else audioPlayer?.currentPosition?.toLong() ?: 0L
-        if (replayTotalMs > 0) wave.wf.playhead = (pos.toFloat() / replayTotalMs).coerceIn(0f, 1f)
-        wave.invalidate()
-        main.postDelayed({ tickPlayhead() }, 100)
-    }
 
-    private fun seekPlayback(p: Float) {
-        val target = (p * replayTotalMs).toInt()
-        if (videoView.visibility == View.VISIBLE) videoView.seekTo(target)
-        audioPlayer?.seekTo(target)
-    }
+
 
     /** 回放前临时换成了会话取景，回放完要还原成「当前」的（否则下一句 preview 会偏） */
     private var replaySavedBias: Float? = null
@@ -1015,12 +1015,13 @@ class MainActivity : LsActivity() {
     private fun endReplay(showDiagnosis: Boolean) {
         replaySavedBias?.let { previewBox.bias = it }
         replaySavedBias = null
-        btnSkipReplay.visibility = View.GONE
+        replayCtrl?.release(); replayCtrl = null
         try { videoView.stopPlayback() } catch (_: Exception) {}
-        try { audioPlayer?.release() } catch (_: Exception) {}
-        audioPlayer = null
         videoView.visibility = View.GONE
         previewView.visibility = View.VISIBLE
+        btnSkipReplay.visibility = View.GONE
+        // 回放拖动只在 replay 态有意义，退出后取消，避免 idle/diag 误触把波形当可拖
+        wave.wf.onSeek = null
         state = "diag"
         updateButtons()
         if (showDiagnosis) showDiagnosis()
@@ -1149,7 +1150,7 @@ class MainActivity : LsActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { videoRecording?.stop() } catch (_: Exception) {}
-        try { audioPlayer?.release() } catch (_: Exception) {}
+        try { replayCtrl?.release() } catch (_: Exception) {}
         try { audio?.stop() } catch (_: Exception) {}
         asr.release()
         asrExecutor.shutdown()
