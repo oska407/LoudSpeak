@@ -788,6 +788,10 @@ class MainActivity : LsActivity() {
         sentences.add(s)
         // 语法分句（R11）：补句末标点、把碎片并回上一句；**不改字**，可关
         Punctuator.optimize(sentences, Prefs.punctMode(this))
+        // 音量不达标逐字标注：边录边算，实时显示蓝下划线（停止后 runJudgmentAndDiagnosis 会用完整 volDb 再核一遍）
+        if (!s.uncertain) {
+            s.lowVol = RuleEngine.lowVolumeFlags(s.text, s.absWords, s.absMs, volDb, 0L, 50L, Prefs.dbThreshold(this))
+        }
         renderAll()
         updateCounters()
 
