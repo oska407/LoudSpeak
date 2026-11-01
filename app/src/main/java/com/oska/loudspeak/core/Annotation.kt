@@ -224,7 +224,7 @@ object Annotator {
                     }
                     for (i in s.text.indices) {
                         if (i < s.lowVol.size && s.lowVol[i] && lvMap[i] >= 0) {
-                            sb.setSpan(ColoredUnderlineSpan(0xFF0A6CFF), lvMap[i], lvMap[i] + 1,
+                            sb.setSpan(ColoredUnderlineSpan(VOL_BLUE2), lvMap[i], lvMap[i] + 1,
                                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }
