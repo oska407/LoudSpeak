@@ -23,7 +23,7 @@ object Prefs {
     fun getMode(ctx: Context): String = sp(ctx).getString("mode", MODE_DISPLAY_VIDEO)!!
     fun setMode(ctx: Context, m: String) = sp(ctx).edit().putString("mode", m).apply()
 
-    fun dbThreshold(ctx: Context): Int = sp(ctx).getInt("dbThreshold", 30)
+    fun dbThreshold(ctx: Context): Int = sp(ctx).getInt("dbThreshold", 35)
     fun setDbThreshold(ctx: Context, v: Int) = sp(ctx).edit().putInt("dbThreshold", v.coerceIn(10, 50)).apply()
 
     /** 静音断句时长 ms，可调 400–1200（§14.2 B2），默认 800 */
