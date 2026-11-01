@@ -65,6 +65,11 @@
                 android:id="@+id/btnPerm"
                 style="@style/SetBtn"
                 android:text="授予「所有文件访问」权限（扫 Download 用）" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnAsrDel"
+                style="@style/SetBtn"
+                android:text="删除语音识别模型（asr 目录）" />
         </LinearLayout>
 
         <TextView style="@style/SetSection" android:text="说话人声纹（可选）" />
@@ -121,23 +126,10 @@
                 style="@style/SetBtn"
                 android:text="管理已登记的声纹（改名 / 删除 / 标注开关）" />
 
-            <View style="@style/SetDivider" />
-
-            <LinearLayout style="@style/SetRow">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-                    <TextView style="@style/SetTitle" android:text="音量不达标标注" />
-                    <TextView
-                        style="@style/SetDesc"
-                        android:text="某句话说话声音太小（低于阈值）时，在那几个字下方画蓝色下划线提醒。可单独关。" />
-                </LinearLayout>
-                <Switch
-                    android:id="@+id/swLowVol"
-                    style="@style/SetSwitch" />
-            </LinearLayout>
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSpkDelModel"
+                style="@style/SetBtn"
+                android:text="删除声纹模型文件（仅删模型，不影响已登记声纹）" />
         </LinearLayout>
 
         <TextView style="@style/SetSection" android:text="识别语言" />

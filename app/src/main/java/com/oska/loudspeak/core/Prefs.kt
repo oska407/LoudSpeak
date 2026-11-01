@@ -80,8 +80,19 @@ object Prefs {
      * 流畅度是「怎么说」，措辞完整是「说什么」，两个维度混在一张分级表里会变得没法解释。
      * 关掉 = 会话结束不再生成那段报告，实时链路一个字都不受影响。
      */
-    fun fluencyEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("fluencyEnabled", true)
+    /**
+     * 讲完后的「流畅度报告」（R12）。默认**关**：用户要求默认不弹、需要时再开。
+     * 关掉 = 会话结束不再生成那段报告，实时链路一个字都不受影响。
+     */
+    fun fluencyEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("fluencyEnabled", false)
     fun setFluencyEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("fluencyEnabled", v).apply()
+
+    /**
+     * 讲完弹出的「总结画面」（诊断 / 追问卡）。默认**关**：用户要求默认不弹，
+     * 录完直接回待录、想看回放点「播放」。打开才会录完自动弹出总结。
+     */
+    fun summaryEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("summaryEnabled", false)
+    fun setSummaryEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("summaryEnabled", v).apply()
 
     /**
      * 卡顿阈值（毫秒），超过这么久才算「停了一下」，默认 1200。
@@ -103,14 +114,10 @@ object Prefs {
     fun setNetMode(ctx: Context, v: Int) = sp(ctx).edit().putInt("netMode", v.coerceIn(0, 2)).apply()
 
     // ---- 识别标注体系（§R9）：色彩 + 符号，逐项可关 ----
+    // 旧的 annotPronouns / annotFillers / annotIssues 三组已删：四层（annotL1..L4）才是权威开关，
+    // annotationPrefs() 从四层推导旧字段。留着这三把没人读的锁，只会让人以为改它们有用。
     fun annotEnabled(ctx: Context): Boolean = sp(ctx).getBoolean("annotEnabled", true)
     fun setAnnotEnabled(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotEnabled", v).apply()
-    fun annotPronouns(ctx: Context): Boolean = sp(ctx).getBoolean("annotPronouns", true)
-    fun setAnnotPronouns(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotPronouns", v).apply()
-    fun annotFillers(ctx: Context): Boolean = sp(ctx).getBoolean("annotFillers", true)
-    fun setAnnotFillers(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotFillers", v).apply()
-    fun annotIssues(ctx: Context): Boolean = sp(ctx).getBoolean("annotIssues", true)
-    fun setAnnotIssues(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotIssues", v).apply()
 
     // ---- 四层标注（标注多层次设计 v1）：L1 代词 / L2 不完整句 / L3 指代歧义 / L4 更清楚的说法 ----
     // 每层独立可关。L1/L2 有「用大模型」子开关；L3/L4 模型专属，PcJudge 关时设置页置灰。
@@ -170,7 +177,9 @@ object Prefs {
      */
     fun judgeLevels(ctx: Context): Map<String, Boolean>? {
         val pc = pcJudgeEnabled(ctx)
-        val l1 = annotL1(ctx) && annotL1Model(ctx) && pc
+        // L3 的歧义要读模型返回的 pronouns[].ambiguous，所以只要开了 L3，就必须让模型吐 pronouns。
+        // 否则会出现「L3 开了、PC 判定也开了，暗金 ? 却永远不出现」—— 契约层自相矛盾。
+        val l1 = ((annotL1(ctx) && annotL1Model(ctx)) || annotL3(ctx)) && pc
         val l2 = annotL2(ctx) && annotL2Model(ctx) && pc
         val l3 = annotL3(ctx) && pc
         val l4 = annotL4(ctx) && pc
@@ -219,26 +228,22 @@ object Prefs {
     fun annotationPrefs(ctx: Context): AnnotationPrefs =
         AnnotationPrefs(
             enabled = annotEnabled(ctx),
-            pronouns = annotL1(ctx),
             fillers = annotL1(ctx) && annotL1Filler(ctx),
-            issues = annotL2(ctx),
-            // 旧「模糊词」本地词表已并入 L3（改由模型判），本地那份不再单独生效
-            muzzy = false,
+            // 模糊词跟着 L2 一起开；muzzyEnabled 是判定层的总闸（默认开）。
+            // Levels 里那个字段已改名 muzzy（原 l2），正是为了不再和用户可见的「L2 不完整句」撞名。
+            muzzy = annotL2(ctx) && muzzyEnabled(ctx),
             pronounList = pronounList(ctx),
             l1 = annotL1(ctx),
             l1Model = annotL1Model(ctx),
             l2 = annotL2(ctx),
-            l2Model = annotL2Model(ctx),
             l3 = annotL3(ctx),
             l4 = annotL4(ctx),
             fontSizeSp = annotFontSizeSp(ctx),
-            lowVol = annotLowVol(ctx),
-            speakerTranscribe = speakerTranscribe(ctx)
+            lowVol = annotLowVol(ctx)
         )
 
-    /** 模糊词标注（跟 L2 一起开，默认关） */
-    fun annotMuzzy(ctx: Context): Boolean = sp(ctx).getBoolean("annotMuzzy", false)
-    fun setAnnotMuzzy(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("annotMuzzy", v).apply()
+    // 注：旧的 annotMuzzy 开关已删。模糊词现在由 annotationPrefs() 从 annotL2 + muzzyEnabled 推导，
+    //     多留一把锁只会出现「开了 muzzy 却没反应」的新坑。
 
     /** 第 N 次会话计数（所有档位都计，§12.0） */
     fun sessionCount(ctx: Context): Int = sp(ctx).getInt("sessionCount", 0)
@@ -270,6 +275,15 @@ object Prefs {
     /** 模型目录（app 私有拷贝工作区，SAF 导入后落地于此） */
     fun modelsDir(ctx: Context): String =
         ctx.getExternalFilesDir(null)?.let { "${it.absolutePath}/models" } ?: "${ctx.filesDir.absolutePath}/models"
+
+    /**
+     * 用户最近一次成功加载的声纹模型绝对路径。
+     * startEnroll 优先用它，而不是 loadFirst() 盲选 spk/ 里体积最大的 .onnx——
+     * ASR 模型（model.int8.onnx，约 25MB）比声纹模型（约 8MB）大，盲选会把它误当声纹模型加载而崩。
+     * 空串 = 没记过，退回 loadFirst()。
+     */
+    fun spkModelPath(ctx: Context): String = sp(ctx).getString("spkModelPath", "") ?: ""
+    fun setSpkModelPath(ctx: Context, path: String) = sp(ctx).edit().putString("spkModelPath", path).apply()
 
     /**
      * 局域网 PC 判定桥开关（§R9「PC 局域网加速」路线）。

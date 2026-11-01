@@ -1,6 +1,6 @@
 package com.oska.loudspeak
 
-import android.net.Uri
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -19,7 +19,6 @@ import com.oska.loudspeak.core.Prefs
 import com.oska.loudspeak.core.ReplayController
 import com.oska.loudspeak.core.SessionStore
 import com.oska.loudspeak.core.Ui
-import com.oska.loudspeak.core.WaveformView
 import org.json.JSONObject
 import java.io.File
 
@@ -28,14 +27,15 @@ import java.io.File
  * - ① 档：播放 video_seg*.mp4（多段自动拼接）+ 带声；② 档：只放 audio.wav。
  * - 七键：播放 / 暂停 / 停止 / 上句 / 下句 / 画面 / 返回。
  * - 画面三态：取景 → 全幅 → 关（只留音频）。
- * - 进场（用户选 A）：进页面即暂停，playhead 定位到首条问题句开头（①）/ 0（②），不自动出声。
  *
  * 2026-10 改版（回应真机反馈）：
  *  - 文字显示区放大（字号 20sp + 占满纵向剩余空间）。
- *  - 加一条**可拖动**的播放进度条（解决「不能调整播放位置」）。
- *  - 倍速改成**可拖动的小滑杆**（0.5x–2.0x，紧凑），且视频档也能调（VideoView.setPlaybackSpeed）。
- *  - 音波条保留（回放概览 + 播放头 + 句分隔）。
- *  - 视频画面**保持宽高比铺满（cover）**，不再被拉伸变形。
+ *  - 可拖动的播放进度条。
+ *  - 倍速改成**按键**（0.5 / 1.0 / 1.5 / 2.0x）放在左下角。
+ *  - 去掉音波条。
+ *  - 改名 / 删除移到左下角。
+ *  - 画面「关」时左画面 GONE，右栏自动占满整屏（音频档同理：视频本就不存在，右栏直接占满）。
+ *  - 全幅改为 contain（整幅显示，不裁切，整个视频都看得见）。
  */
 class SessionViewActivity : LsActivity() {
 
@@ -44,22 +44,21 @@ class SessionViewActivity : LsActivity() {
     private var sessionId = ""
     private lateinit var dir: File
     private var hasVideo = false
-    private var cropBias = 0.0
     private var videoMode = 0 // 0 取景 / 1 全幅 / 2 关
 
     private lateinit var titleTv: TextView
     private lateinit var timeTv: TextView
-    private lateinit var wave: WaveformView
     private lateinit var videoView: VideoView
     private lateinit var videoFrame: FrameLayout
     private lateinit var btnPlay: Button
     private lateinit var btnPause: Button
     private lateinit var seekPos: SeekBar
-    private lateinit var seekSpeed: SeekBar
-    private lateinit var speedTv: TextView
     private var sentences: List<com.oska.loudspeak.core.RuleEngine.Sentence> = emptyList()
     /** 进度条拖动中：onPosition 回调别来回抢 */
     private var seekingPos = false
+    private var currentSpeed = 1.0f
+    private val speedButtons = mutableListOf<Button>()
+    private var btnVideo: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,7 +80,6 @@ class SessionViewActivity : LsActivity() {
         } catch (_: Exception) { null }
 
         val mode = meta?.optString("mode") ?: "?"
-        cropBias = meta?.optDouble("cropBias", 0.0) ?: 0.0
         val dur = meta?.optLong("durationMs") ?: 0
         hasVideo = File(dir, "audio.wav").exists() &&
                 (dir.listFiles { f -> f.name.startsWith("video_seg") && f.name.endsWith(".mp4") }?.isNotEmpty() == true)
@@ -89,33 +87,21 @@ class SessionViewActivity : LsActivity() {
 
         val label = store.readTitle(dir) ?: store.sessionLabel(sessionId)
 
-        // ---- 顶部：备注名 + 类型 + 时长 + 改名 + 删除 ----
+        // ---- 顶部：只放备注名 + 类型 + 时长（改名/删除已移到左下角）----
         titleTv = TextView(this).apply {
             text = "$label  ·  ${modeName(mode)}  ·  ${fmt(dur)}"
             textSize = 16f; setTextColor(0xFFFFFFFF.toInt())
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val btnRename = Button(this).apply {
-            text = "改名"; textSize = 12f
-            setOnClickListener { doRename() }
-        }
-        val btnDelete = Button(this).apply {
-            text = "删除"; textSize = 12f
-            setOnClickListener { confirmDelete() }
-        }
-        val top = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(titleTv); addView(btnRename); addView(btnDelete)
-        }
-        root.addView(top)
+        root.addView(titleTv, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // ---- 中部：左画面 + 右栏 ----
         val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-        // 左：画面
+        // 左：画面（仅视频档；音频档与「关画面」时权重归零 + GONE，右栏自动占满全屏）
         videoFrame = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 26f)
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, if (hasVideo) 26f else 0f)
         }
         videoView = VideoView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -124,7 +110,7 @@ class SessionViewActivity : LsActivity() {
         if (hasVideo) videoFrame.addView(videoView) else videoFrame.visibility = View.GONE
         body.addView(videoFrame)
 
-        // 右：转写 + 波形 + 进度 + 倍速 + 七键
+        // 右：转写 + 进度（去掉了音波条）
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 74f)
@@ -144,17 +130,6 @@ class SessionViewActivity : LsActivity() {
         Annotator.attachInteraction(tv, annPrefs)
         val sc = ScrollView(this).apply { addView(tv) }
         right.addView(sc, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-
-        // 音波条（回放概览 + 播放头 + 句分隔）
-        val waveHost = object : View(this) {
-            val wf = WaveformView(this)
-            override fun onDraw(c: android.graphics.Canvas) = wf.onDraw(c)
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (resources.displayMetrics.density * 60).toInt())
-        }
-        wave = waveHost.wf
-        right.addView(waveHost)
 
         // 进度条（可拖动，调整播放位置）
         val posRow = LinearLayout(this).apply {
@@ -187,30 +162,32 @@ class SessionViewActivity : LsActivity() {
         posRow.addView(seekPos); posRow.addView(timeTv)
         right.addView(posRow)
 
-        // 倍速（紧凑滑杆，0.5x–2.0x，视频档也能调）
-        val spdRow = LinearLayout(this).apply {
+        body.addView(right)
+        root.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        // ---- 底部：左下角控制（改名 / 删除 / 倍速按键）+ 七键 ----
+        // 左下角一行：改名、删除、倍速按键
+        val leftRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, pad / 4, 0, pad / 2)
+            setPadding(0, pad / 2, 0, pad / 4)
         }
-        val spdLabel = TextView(this).apply { text = "倍速"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt()) }
-        seekSpeed = SeekBar(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            max = 6; progress = 2   // 默认 1.0x
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                    if (fromUser) applySpeedFromSeek()
-                }
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) { applySpeedFromSeek() }
-            })
+        leftRow.addView(mkBtn("改名") { doRename() })
+        leftRow.addView(mkBtn("删除") { confirmDelete() })
+        leftRow.addView(TextView(this).apply {
+            text = "倍速"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt())
+            setPadding(pad, 0, (pad / 2), 0)
+        })
+        for (sp in listOf(0.5f, 1.0f, 1.5f, 2.0f)) {
+            val b = mkBtn("${sp}x") {
+                currentSpeed = sp
+                controller.setSpeed(sp)
+                highlightSpeed()
+            }
+            speedButtons.add(b)
+            leftRow.addView(b)
         }
-        speedTv = TextView(this).apply {
-            text = "1.0x"; textSize = 13f; setTextColor(0xFF9AA7B0.toInt())
-            setPadding((pad * 0.6).toInt(), 0, 0, 0)
-        }
-        spdRow.addView(spdLabel); spdRow.addView(seekSpeed); spdRow.addView(speedTv)
-        right.addView(spdRow)
+        root.addView(leftRow)
 
         // 七键
         btnPlay = mkBtn("播放") { controller.play() }
@@ -224,44 +201,38 @@ class SessionViewActivity : LsActivity() {
         val btnBack = mkBtn("返回") { finish() }
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            setPadding(0, pad / 4, 0, 0)
             addView(btnPlay); addView(btnPause); addView(btnStop)
             addView(btnPrev); addView(btnNext); addView(btnVideo); addView(btnBack)
         }
-        right.addView(bar)
+        root.addView(bar)
 
-        body.addView(right)
-        root.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
 
         // ---- 内核 ----
         controller = ReplayController(dir, hasVideo, sentences,
             onState = { updateButtons(it) },
             onPosition = { pos, total -> runOnUiThread {
-                wave.playhead = if (total > 0) pos.toFloat() / total else 0f
                 timeTv.text = "${fmt(pos)} / ${fmt(total)}"
                 if (!seekingPos && total > 0) seekPos.progress = (pos * 1000 / total).toInt()
-                wave.invalidate()
             } })
-        wave.onSeek = { frac -> controller.seek((frac * controller.getTotalMs()).toLong()) }
-        wave.onStartSeek = { frac -> wave.startFrac = frac }
-        wave.onDoubleTap = { frac -> controller.seek((frac * controller.getTotalMs()).toLong()); controller.play() }
-        wave.timeFormat = { frac -> "${fmt((frac * controller.getTotalMs()).toLong())} / ${fmt(controller.getTotalMs())}" }
-        wave.sentenceFracs = sentences.map { if (controller.getTotalMs() > 0) it.tStartMs.toFloat() / controller.getTotalMs() else 0f }
-
         if (hasVideo) controller.attachVideoView(videoView) else controller.attachAudio()
 
         // 进场 A：定位到首问题句开头（①）/ 0（②），不自动播
         val firstProblem = sentences.firstOrNull { it.flags.isNotEmpty() }?.tStartMs ?: 0L
         controller.seek(firstProblem)
 
-        videoFrame.post { applyFraming() }
+        applyFraming()
+        highlightSpeed()
         updateButtons(controller.currentState())
     }
 
-    private fun applySpeedFromSeek() {
-        val speed = 0.5f + (seekSpeed.progress * 0.25f)   // 0.5 / 0.75 / 1.0 / 1.25 / 1.5 / 1.75 / 2.0
-        controller.setSpeed(speed)
-        speedTv.text = "%.2fx".format(speed)
+    /** 高亮当前生效的倍速按键 */
+    private fun highlightSpeed() {
+        for (b in speedButtons) {
+            val v = b.text.toString().removeSuffix("x").toFloatOrNull() ?: 1.0f
+            b.setTypeface(null, if (v == currentSpeed) Typeface.BOLD else Typeface.NORMAL)
+        }
     }
 
     private fun mkBtn(text: String, fn: () -> Unit): Button =
@@ -282,8 +253,6 @@ class SessionViewActivity : LsActivity() {
         if (idx != null) controller.seekSentence(idx)
     }
 
-    private var btnVideo: Button? = null
-
     private fun cycleVideo() {
         if (!hasVideo) return
         videoMode = (videoMode + 1) % 3
@@ -294,30 +263,28 @@ class SessionViewActivity : LsActivity() {
     }
 
     /**
-     * 取景：内层按 16:9 撑到 1280px，再平移挑 417px 竖条（1:1 像素，不缩放）；全幅整幅；关则隐去画面。
-     * 关键修复：无论哪种模式都**保持宽高比铺满（cover）**，不再把视频拉伸到 FrameLayout 的异形比例 → 变形。
+     * 画面三态（交给系统 VideoScalingMode 处理，**不做手动 scale/translate** ——
+     * 之前手动平移正是「全幅时约 85% 画面跑出视野」的根因）：
+     *  0 取景 = 铺满裁切（cover，SCALE_TO_FIT_WITH_CROPPING）
+     *  1 全幅 = 整幅显示（contain，SCALE_TO_FIT，整个视频都看得见）
+     *  2 关   = 画面 GONE + 权重归零，右栏自动占满全屏（音频档同理）。
      */
     private fun applyFraming() {
         if (!hasVideo) return
-        videoFrame.post {
-            val fw = videoFrame.width.toFloat(); val fh = videoFrame.height.toFloat()
-            // 录制原视频 1280×720（16:9），cover 铺满：取统一放大系数，居中，溢出部分裁掉（不变形）
-            val cov = maxOf(fw / 1280f, fh / 720f)
-            videoView.scaleX = cov; videoView.scaleY = cov
-            val dw = 1280f * cov; val dh = 720f * cov
-            val cx = (fw - dw) / 2f; val cy = (fh - dh) / 2f
-            when (videoMode) {
-                0 -> { // 取景：在 cover 基础上按 cropBias 横向平移，挑出脸部竖条（只平移、不缩放、不变形）
-                    val shift = -cropBias.toFloat() * (dw - fw) / 2f
-                    videoView.translationX = cx + shift
-                    videoView.translationY = cy
-                    videoFrame.visibility = View.VISIBLE
-                }
-                1 -> { // 全幅：纯 cover 居中
-                    videoView.translationX = cx; videoView.translationY = cy
-                    videoFrame.visibility = View.VISIBLE
-                }
-                else -> videoFrame.visibility = View.INVISIBLE
+        when (videoMode) {
+            0 -> {
+                videoFrame.visibility = View.VISIBLE
+                videoFrame.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 26f)
+                controller.setVideoScaling(android.media.MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+            }
+            1 -> {
+                videoFrame.visibility = View.VISIBLE
+                videoFrame.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 26f)
+                controller.setVideoScaling(android.media.MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+            }
+            else -> {
+                videoFrame.visibility = View.GONE
+                videoFrame.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0f)
             }
         }
     }
@@ -332,9 +299,9 @@ class SessionViewActivity : LsActivity() {
                 val newName = input.text.toString().trim()
                 store.setTitle(dir, newName)
                 store.setTitleInDb(sessionId, newName)
-                val mode = try { JSONObject(File(dir, "meta.json").readText()).optString("mode") } catch (_: Exception) { "?" }
-                val dur = try { JSONObject(File(dir, "meta.json").readText()).optLong("durationMs") } catch (_: Exception) { 0L }
-                titleTv.text = "$newName  ·  ${modeName(mode)}  ·  ${fmt(dur)}"
+                val m = try { JSONObject(File(dir, "meta.json").readText()).optString("mode") } catch (_: Exception) { "?" }
+                val d = try { JSONObject(File(dir, "meta.json").readText()).optLong("durationMs") } catch (_: Exception) { 0L }
+                titleTv.text = "$newName  ·  ${modeName(m)}  ·  ${fmt(d)}"
                 Toast.makeText(this, "已保存备注名", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("取消", null)

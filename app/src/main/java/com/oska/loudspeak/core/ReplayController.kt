@@ -53,6 +53,8 @@ class ReplayController(
     private var videoView: VideoView? = null
     /** VideoView 内部的 MediaPlayer：视频倍速只能通过它设（VideoView.setPlaybackSpeed 是 @hide） */
     private var videoMp: MediaPlayer? = null
+    /** 视频显示缩放：SCALE_TO_FIT=整幅(contain) / SCALE_TO_FIT_WITH_CROPPING=铺满裁切(cover) */
+    private var videoScalingMode: Int = MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT
     /** 回放响度增强器（挂在当前播放器上，换源时重建） */
     private var loudness: LoudnessEnhancer? = null
     private var state = State.IDLE
@@ -97,6 +99,8 @@ class ReplayController(
         videoView = vv
         vv.setOnPreparedListener {
             videoMp = it
+            // 落一遍当前显示的缩放模式（整幅 / 铺满裁切），换段重设时保持一致
+            try { it.setVideoScalingMode(videoScalingMode) } catch (_: Exception) {}
             // 每次（重新）准备都会把倍速重置回 1.0，这里重新落一遍当前倍速
             applyVideoSpeed()
             attachLoudness(it)
@@ -109,6 +113,16 @@ class ReplayController(
         vv.setOnCompletionListener { onSegDone() }
         vv.setVideoURI(Uri.fromFile(videoSegs.first()))
         vv.seekTo(0)
+    }
+
+    /**
+     * 切换视频显示缩放（回放页「全幅 / 取景」）：
+     * SCALE_TO_FIT=整幅显示(contain，整个视频都看得见)；SCALE_TO_FIT_WITH_CROPPING=铺满裁切(cover)。
+     * 用系统缩放在 Surface 内部处理，不会像手动 scale/translate 那样把画面推出视野。
+     */
+    fun setVideoScaling(mode: Int) {
+        videoScalingMode = mode
+        try { videoMp?.setVideoScalingMode(mode) } catch (_: Exception) {}
     }
 
     /** ② 档（仅音频）：内部建 MediaPlayer(audio.wav) */

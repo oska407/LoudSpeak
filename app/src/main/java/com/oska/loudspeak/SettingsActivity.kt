@@ -94,9 +94,11 @@ class SettingsActivity : LsActivity() {
     private lateinit var swL2Model: Switch     // L2 子：用大模型判（PC 判定关时置灰）
     private lateinit var swL3: Switch          // L3 指代歧义（暗金 ?，模型专属）
     private lateinit var swL4: Switch          // L4 更清楚的说法（蓝绿 →，模型专属）
+    private lateinit var swSummary: Switch     // 讲完弹出总结画面（默认关）
     private lateinit var seekAnnFont: SeekBar  // 标注字号 8..16sp
     private lateinit var tvAnnFont: TextView
     private lateinit var btnEditPronouns: View
+    private lateinit var swLowVol: Switch          // 音量不达标标注（蓝下划线，纯本地 dB）
     // 声纹：每个已登记的人一个「加不加名字」开关（运行时按档案动态生成）
     private lateinit var llSpkToggles: LinearLayout
     private lateinit var tvSpkNone: TextView
@@ -127,6 +129,8 @@ class SettingsActivity : LsActivity() {
     private lateinit var btnSpkLoad: View
     private lateinit var btnSpkAdd: View
     private lateinit var btnSpkManage: View
+    private lateinit var btnSpkDelModel: View   // 删除声纹模型文件
+    private lateinit var btnAsrDel: View         // 删除语音识别模型
     private val REQ_REC_AUDIO = 4321
 
     private val asrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -347,8 +351,8 @@ class SettingsActivity : LsActivity() {
         initFluency()
 
         spLevel.adapter = simpleAdapter(listOf(
-            "自动（按第几次会话递进）", "1 · L1 指代词", "2 · ＋L3 口头禅",
-            "3 · ＋L2 模糊词", "4 · ＋L4-a 缺主体", "5 · 全开"))
+            "自动（按第几次会话递进）", "1 · 只抓指代词", "2 · ＋口头禅",
+            "3 · ＋模糊词", "4 · ＋缺主体", "5 · 全开"))
         spLevel.setSelection(Prefs.levelOverride(this).coerceIn(0, 5), false)
         spLevel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
@@ -405,7 +409,7 @@ class SettingsActivity : LsActivity() {
         tvLevelDetail.text = buildString {
             append("节奏是「她能自己听出来」的先开：L1 代词 → L3 口头禅 → L2 模糊词 → L4-a 缺主体 → L4 半截句。\n")
             append("自动挡：第 5 次开 L3，第 9 次开 L2，第 13 次开 L4-a，第 20 次全开。\n")
-            if (lv.l2) append("· 模糊词正在抓（东西/玩意儿 → 换成名字）\n")
+            if (lv.muzzy) append("· 模糊词正在抓（东西/玩意儿 → 换成名字）\n")
             if (lv.l4a) append("· 缺主体正在抓（谁在做这件事）\n")
             if (lv.l4bc) append("· 半截句 / 要素缺失正在抓\n")
             append("一次只加一级：连续 3 次不增加才该进下一级；变差了就退回上一级。")
@@ -423,9 +427,11 @@ class SettingsActivity : LsActivity() {
         swL2Model = findViewById(R.id.swL2Model)
         swL3 = findViewById(R.id.swL3)
         swL4 = findViewById(R.id.swL4)
+        swSummary = findViewById(R.id.swSummary)
         seekAnnFont = findViewById(R.id.seekAnnFont)
         tvAnnFont = findViewById(R.id.tvAnnFont)
         btnEditPronouns = findViewById(R.id.btnEditPronouns)
+        swLowVol = findViewById(R.id.swLowVol)
         llSpkToggles = findViewById(R.id.llSpkToggles)
         tvSpkNone = findViewById(R.id.tvSpkNone)
     }
@@ -448,6 +454,14 @@ class SettingsActivity : LsActivity() {
         swL2Model.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL2Model(this, v) }
         swL3.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL3(this, v) }
         swL4.setOnCheckedChangeListener { _, v -> Prefs.setAnnotL4(this, v) }
+
+        // 音量不达标标注（蓝色下划线，纯本地 dB 判定，不受 PC 判定开关影响）
+        swLowVol.isChecked = Prefs.annotLowVol(this)
+        swLowVol.setOnCheckedChangeListener { _, v -> Prefs.setAnnotLowVol(this, v) }
+
+        // 讲完是否弹总结画面（默认关）
+        swSummary.isChecked = Prefs.summaryEnabled(this)
+        swSummary.setOnCheckedChangeListener { _, v -> Prefs.setSummaryEnabled(this, v) }
 
         // 标注字号 8..16sp，默认 10（9 档）。作用于所有标注文字与符号
         seekAnnFont.max = 8
@@ -490,28 +504,47 @@ class SettingsActivity : LsActivity() {
         tvSpkNone.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
         val d = resources.displayMetrics.density
         for (p in list) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+            // 每个人一个竖块：名字 + 两个开关（声纹标注 / 转文字）
+            val block = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 setPadding(0, (6 * d).toInt(), 0, (6 * d).toInt())
             }
-            row.addView(TextView(this).apply {
+            block.addView(TextView(this).apply {
                 text = p.name
                 textSize = 15f
                 setTextColor(Skin.palette(this@SettingsActivity).text)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
-            row.addView(Switch(this).apply {
-                isChecked = p.transcribe
+            val swRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, (4 * d).toInt(), 0, 0)
+            }
+            // 声纹标注：句首加「名字：」
+            swRow.addView(TextView(this).apply {
+                text = "声纹标注"; textSize = 13f; setTextColor(Skin.palette(this@SettingsActivity).text)
+                setPadding(0, 0, (4 * d).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            swRow.addView(Switch(this).apply {
+                isChecked = p.annotate
                 setOnCheckedChangeListener { _, v ->
-                    // 只改这一个人的这一位，别整表覆盖（避免把别人的改动冲掉）
-                    val st = SpeakerProfileStore(Prefs.modelsDir(this@SettingsActivity))
-                    val l = st.load()
-                    val i = l.indexOfFirst { it.id == p.id }
-                    if (i >= 0) { l[i] = l[i].copy(transcribe = v); st.save(l) }
+                    SpeakerProfileStore(Prefs.modelsDir(this@SettingsActivity)).setAnnotate(p.id, v)
                 }
             })
-            llSpkToggles.addView(row)
+            // 转文字：关掉则整句滤过
+            swRow.addView(TextView(this).apply {
+                text = "转文字"; textSize = 13f; setTextColor(Skin.palette(this@SettingsActivity).text)
+                setPadding((14 * d).toInt(), 0, (4 * d).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            swRow.addView(Switch(this).apply {
+                isChecked = p.transcribe
+                setOnCheckedChangeListener { _, v ->
+                    SpeakerProfileStore(Prefs.modelsDir(this@SettingsActivity)).setTranscribe(p.id, v)
+                }
+            })
+            block.addView(swRow)
+            llSpkToggles.addView(block)
         }
     }
 
@@ -888,6 +921,8 @@ class SettingsActivity : LsActivity() {
         btnSpkLoad = findViewById(R.id.btnSpkLoad)
         btnSpkAdd = findViewById(R.id.btnSpkAdd)
         btnSpkManage = findViewById(R.id.btnSpkManage)
+        btnSpkDelModel = findViewById(R.id.btnSpkDelModel)
+        btnAsrDel = findViewById(R.id.btnAsrDel)
     }
 
     private fun initModel() {
@@ -999,11 +1034,9 @@ class SettingsActivity : LsActivity() {
         btnSpkLoad.setOnClickListener { loadSpeakerDialog() }
         btnSpkAdd.setOnClickListener { addSpeakerFlow() }
         btnSpkManage.setOnClickListener { manageSpeakers() }
+        btnSpkDelModel.setOnClickListener { manageSpkModels() }
+        btnAsrDel.setOnClickListener { deleteAsrModel() }
         findViewById<Button>(R.id.btnSpkPickFile)?.setOnClickListener { pickSpkFile() }
-        findViewById<android.widget.Switch>(R.id.swLowVol)?.apply {
-            isChecked = Prefs.annotLowVol(this@SettingsActivity)
-            setOnCheckedChangeListener { _, c -> Prefs.setAnnotLowVol(this@SettingsActivity, c) }
-        }
         refreshSpkStatus()
         refreshNet()
     }
@@ -1106,6 +1139,7 @@ class SettingsActivity : LsActivity() {
             val statusMsg = eng.status
             val dimv = eng.dim
             val (tok, tmsg) = if (ok) eng.selfTest() else (false to "")
+            if (ok) Prefs.setSpkModelPath(this, f.absolutePath)  // 记住这次成功加载的声纹模型，录入时优先用它
             eng.release()
             runOnUiThread {
                 tvSpkStatus.text = when {
@@ -1148,7 +1182,11 @@ class SettingsActivity : LsActivity() {
         }
         asrExecutor.execute {
             val eng = SpeakerEngine(Prefs.modelsDir(this))
-            if (!eng.loadFirst()) {
+            // 优先用用户上次在「加载」里成功选过的模型；没记过再退回 loadFirst（按体积挑，但已排除 ASR 模型名）
+            val savedPath = Prefs.spkModelPath(this)
+            val target = if (savedPath.isNotEmpty()) File(savedPath) else null
+            val loaded = if (target != null && target.isFile) eng.load(target) else eng.loadFirst()
+            if (!loaded) {
                 val st = eng.status
                 eng.release()
                 runOnUiThread { pd.dismiss(); Toast.makeText(this, "先加载声纹模型：$st", Toast.LENGTH_LONG).show() }
@@ -1187,7 +1225,7 @@ class SettingsActivity : LsActivity() {
     }
 
     private fun speakerActions(p: SpeakerProfile) {
-        val toggle = if (p.transcribe) "关闭标注（不转写这句）" else "开启标注（转写这句）"
+        val toggle = if (p.transcribe) "关闭转文字（这句整句滤过）" else "开启转文字（这句正常显示）"
         AlertDialog.Builder(this)
             .setTitle(p.name)
             .setItems(arrayOf("改名", "删除", toggle)) { _, which ->
@@ -1211,7 +1249,7 @@ class SettingsActivity : LsActivity() {
         val i = l.indexOfFirst { it.id == p.id }
         if (i >= 0) { l[i] = l[i].copy(transcribe = !l[i].transcribe); store.save(l) }
         Toast.makeText(this,
-            if (l.getOrNull(i)?.transcribe == true) "已开启「${p.name}」标注" else "已关闭「${p.name}」标注",
+            if (l.getOrNull(i)?.transcribe == true) "已开启「${p.name}」转文字" else "已关闭「${p.name}」转文字",
             Toast.LENGTH_SHORT).show()
         refreshSpkStatus()
     }
@@ -1230,14 +1268,76 @@ class SettingsActivity : LsActivity() {
 
     private fun importSpkFiles(uris: List<android.net.Uri>) {
         val eng = SpeakerEngine(Prefs.modelsDir(this))
-        var ok = 0; var fail = 0
+        var ok = 0; var fail = 0; var skippedAsr = 0
         for (u in uris) {
             val name = com.oska.loudspeak.core.ModelScanner.queryName(this, u) ?: continue
             if (!name.endsWith(".onnx", true)) continue
+            // model.int8.onnx 是语音识别（ASR）模型的固定名，绝不该当声纹模型装进 spk/
+            if (name.equals("model.int8.onnx", true)) { skippedAsr++; continue }
             if (eng.importUri(this, u, name)) ok++ else fail++
         }
-        Toast.makeText(this, "声纹模型已导入 $ok 个${if (fail > 0) "，失败 $fail 个" else ""}", Toast.LENGTH_LONG).show()
+        val extra = if (skippedAsr > 0)
+            "（跳过 $skippedAsr 个 model.int8.onnx：那是语音识别模型，请用上面的「选目录/选文件」导入到 asr/）" else ""
+        Toast.makeText(this,
+            "声纹模型已导入 $ok 个${if (fail > 0) "，失败 $fail 个" else ""}$extra",
+            Toast.LENGTH_LONG).show()
         refreshSpkStatus()
+    }
+
+    /** 列出 spk/ 里的声纹模型文件，点一个删一个（带二次确认）。
+     *  注意：列出全部 .onnx（不排除 model.int8.onnx）—— 那个名字是 ASR 模型，
+     *  万一之前误导入了，也得能在这里删掉，否则它会一直占着 spk/。 */
+    private fun manageSpkModels() {
+        val eng = SpeakerEngine(Prefs.modelsDir(this))
+        val d = eng.spkDir()
+        val files = if (d.isDirectory)
+            (d.listFiles { f -> f.isFile && f.name.endsWith(".onnx", true) } ?: emptyArray()).toList()
+        else emptyList()
+        if (files.isEmpty()) {
+            Toast.makeText(this, "spk/ 下没有可删除的声纹模型", Toast.LENGTH_LONG).show()
+            return
+        }
+        val labels = files.map { "${it.name}（${it.length() / 1_000_000}MB）" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("删除声纹模型文件（仅删文件，不影响已登记声纹）")
+            .setItems(labels) { _, which -> confirmDeleteSpk(files[which]) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun confirmDeleteSpk(f: File) {
+        AlertDialog.Builder(this)
+            .setTitle("删除这个声纹模型？")
+            .setMessage("${f.name}（${f.length() / 1_000_000}MB）\n删了之后，重新录入声纹前需要再装一个。")
+            .setPositiveButton("删除") { _, _ ->
+                val ok = try { f.delete() } catch (_: Exception) { false }
+                if (ok && Prefs.spkModelPath(this) == f.absolutePath) Prefs.setSpkModelPath(this, "")
+                Toast.makeText(this, if (ok) "已删除：${f.name}" else "删除失败", Toast.LENGTH_SHORT).show()
+                refreshSpkStatus()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 删除语音识别模型（asr/model.int8.onnx + asr/tokens.txt），带二次确认 */
+    private fun deleteAsrModel() {
+        val (m, t) = AsrEngine(Prefs.modelsDir(this)).checkFiles()
+        if (m?.isFile != true && t?.isFile != true) {
+            Toast.makeText(this, "没有可删除的语音识别模型", Toast.LENGTH_LONG).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("删除语音识别模型？")
+            .setMessage("会删掉 asr/ 下的 model.int8.onnx 与 tokens.txt。\n删了之后识别会失效，需要重新导入。")
+            .setPositiveButton("删除") { _, _ ->
+                var n = 0
+                if (m != null && m.isFile && m.delete()) n++
+                if (t != null && t.isFile && t.delete()) n++
+                Toast.makeText(this, if (n > 0) "已删除语音识别模型" else "删除失败", Toast.LENGTH_SHORT).show()
+                refreshModelStatus()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun renameSpeaker(p: SpeakerProfile) {

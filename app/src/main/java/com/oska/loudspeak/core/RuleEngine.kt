@@ -47,7 +47,9 @@ object RuleEngine {
      */
     data class Levels(
         val index: Int,
-        val l2: Boolean,      // 模糊词（东西/玩意儿…）
+        // 模糊词（东西/玩意儿…）。刻意不叫 l2：用户看到的「L2」是「不完整句」，
+        // 两者同名不同义，历史上前者叫 l2，就是所有误读的源头。
+        val muzzy: Boolean,
         val l4a: Boolean,     // 缺主体
         val l4bc: Boolean     // 半截句 / 要素缺失
     ) {
@@ -64,12 +66,14 @@ object RuleEngine {
         else -> 1
     }
 
+    // 这里刻意不再用 L1/L2/L3/L4 编号：那是「标注层」的编号，和判定档位不是一套，
+    // 混着写就是「L2 到底是模糊词还是话没说完」这类误读的根源。统一改成说人话的递进描述。
     fun levelName(i: Int): String = when (i) {
-        1 -> "L1 指代词"
-        2 -> "L1 指代词 + L3 口头禅"
-        3 -> "L1 + L3 + L2 模糊词"
-        4 -> "L1 + L3 + L2 + L4-a 缺主体"
-        else -> "全开（含 L4-b 半截句 / L4-c 要素缺失）"
+        1 -> "只抓指代词"
+        2 -> "指代词 + 口头禅"
+        3 -> "＋ 模糊词（东西/玩意儿）"
+        4 -> "＋ 缺主体"
+        else -> "全开（含半截句 / 要素缺失）"
     }
 
     /**
@@ -78,7 +82,7 @@ object RuleEngine {
      */
     fun levels(sessionCount: Int, override: Int): Levels {
         val i = if (override in 1..5) override else autoLevelIndex(sessionCount)
-        return Levels(i, l2 = i >= 3, l4a = i >= 4, l4bc = i >= 5)
+        return Levels(i, muzzy = i >= 3, l4a = i >= 4, l4bc = i >= 5)
     }
 
     /** 单句数据（对应 §10.3 transcript 字段的内存形态） */
@@ -304,7 +308,7 @@ object RuleEngine {
             s.fillers.addAll(matchFillers(s.text))
         }
         // L2 模糊词
-        if (levels.l2 && muzzyOn) {
+        if (levels.muzzy && muzzyOn) {
             for (s in sentences) {
                 if (!s.judgeable || s.selfMarked) continue
                 s.muzzy.addAll(matchMuzzy(s.text))
@@ -359,7 +363,7 @@ object RuleEngine {
 
     /** 兼容旧签名：只区分「L4 开不开」 */
     fun evaluate(sentences: List<Sentence>, l4Enabled: Boolean, pronounList: List<String> = PRONOUNS) =
-        evaluate(sentences, Levels(if (l4Enabled) 5 else 1, l2 = false, l4a = l4Enabled, l4bc = l4Enabled), pronounList = pronounList)
+        evaluate(sentences, Levels(if (l4Enabled) 5 else 1, muzzy = false, l4a = l4Enabled, l4bc = l4Enabled), pronounList = pronounList)
 
     /** 分级开关（§8.6）：第 13 次会话起开 L4-a；仅此一级，宁漏勿错 */
     fun l4Enabled(sessionCount: Int): Boolean = sessionCount >= 13

@@ -33,7 +33,12 @@ class SpeakerEngine(private val modelsDir: String) {
     fun findModels(): List<File> {
         val d = spkDir()
         if (!d.isDirectory) return emptyList()
-        return (d.listFiles { f -> f.isFile && f.name.endsWith(".onnx", true) } ?: emptyArray())
+        // ASR 模型固定叫 model.int8.onnx（ModelScanner.installAsr 强制），它绝不可能是声纹模型。
+        // 必须排除：否则用户一旦把 ASR 模型误导进 spk/，loadFirst 会按体积挑中它，
+        // 拿去建 SpeakerEmbeddingExtractor 必崩，录入声纹直接报错。
+        val asrName = "model.int8.onnx"
+        return (d.listFiles { f -> f.isFile && f.name.endsWith(".onnx", true) && f.name != asrName }
+            ?: emptyArray())
             .sortedByDescending { it.length() }
     }
 

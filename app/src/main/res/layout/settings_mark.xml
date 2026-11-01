@@ -44,7 +44,7 @@
                     android:layout_weight="1"
                     android:orientation="vertical">
 
-                    <TextView style="@style/SetTitle" android:text="L1 代词（红字 + 下划线）" />
+                    <TextView style="@style/SetTitle" android:text="L1 代词（红字）" />
                     <TextView style="@style/SetDesc"
                         android:text="把「这个 / 那个」这类词标红，提醒换成具体名字。" />
                 </LinearLayout>
@@ -73,7 +73,7 @@
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:paddingStart="16dp"
-                    android:text="也标口头禅（灰字 + 下划线）" />
+                    android:text="也标口头禅（灰字·须开着上面的 L1）" />
 
                 <Switch
                     android:id="@+id/swL1Filler"
@@ -89,7 +89,7 @@
                     android:layout_weight="1"
                     android:orientation="vertical">
 
-                    <TextView style="@style/SetTitle" android:text="L2 不完整句（橙下划线 + ⚠）" />
+                    <TextView style="@style/SetTitle" android:text="L2 不完整句（句尾橙 ⚠）" />
                     <TextView style="@style/SetDesc"
                         android:text="话没说完就断了，或者讲了过程却没给结论。" />
                 </LinearLayout>
@@ -147,6 +147,24 @@
 
                 <Switch
                     android:id="@+id/swL4"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+
+            <View style="@style/SetDivider" />
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView style="@style/SetTitle" android:text="音量不达标标注" />
+                    <TextView
+                        style="@style/SetDesc"
+                        android:text="某句话说话声音太小（低于阈值）时，在那几个字下方画蓝色下划线提醒。可单独关。" />
+                </LinearLayout>
+                <Switch
+                    android:id="@+id/swLowVol"
                     style="@style/SetSwitch" />
             </LinearLayout>
 
@@ -256,6 +274,28 @@
                 android:text="语速按「第一个字到最后一个字」算，不含句尾那段安静；停顿要按合并后的整句看，半截话接回上一句时，中间那次停顿也会被算进去。" />
         </LinearLayout>
 
+        <TextView style="@style/SetSection" android:text="总结画面" />
+
+        <LinearLayout style="@style/SetCard">
+
+            <LinearLayout style="@style/SetRow">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView style="@style/SetTitle" android:text="讲完弹出总结画面" />
+                    <TextView style="@style/SetDesc"
+                        android:text="录完一段，自动弹一个总结画面（标注了什么、哪句要改）。默认关；想要就在这里打开。" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swSummary"
+                    style="@style/SetSwitch" />
+            </LinearLayout>
+        </LinearLayout>
+
         <TextView style="@style/SetSection" android:text="声纹（这句是谁说的）" />
 
         <LinearLayout style="@style/SetCard">
@@ -264,7 +304,7 @@
                 style="@style/SetDesc"
                 android:paddingTop="12dp"
                 android:paddingBottom="4dp"
-                android:text="录了声纹之后，每句识别文字前面会自动加「名字：」，多人对话时一眼看出哪句是谁说的。\n下面按人开关：关掉某个人，他那几句就不加名字（文字照样识别、照样标注），不是把这个人删掉。" />
+                android:text="录了声纹之后，可以按人开关两件事：\n· 声纹标注：关掉后他那几句不加「名字：」（文字照样识别、照样标注）。\n· 转文字：关掉后他那几句整句滤过，完全不显示。\n不是把这个人删掉。" />
 
             <!-- 每个已登记声纹一个开关，运行时按档案动态塞进来（见 rebuildSpkToggles） -->
             <LinearLayout
@@ -288,7 +328,7 @@
             <TextView
                 style="@style/SetDesc"
                 android:paddingTop="6dp"
-                android:text="认不出来的时候会标「其他：」——那是「不认识这个人」，跟「关掉了某人的标注」不是一回事。" />
+                android:text="只要有人开了「声纹标注」，认不出来的那几句就会标「其他：」（表示不认识这个人）；如果谁都没开标注，所有文字直接显示、不加任何前缀。这跟「关掉了某人的标注」不是一回事。" />
         </LinearLayout>
 
         <TextView style="@style/SetSection" android:text="标注说明" />
@@ -298,7 +338,7 @@
                 style="@style/SetDesc"
                 android:paddingTop="12dp"
                 android:paddingBottom="12dp"
-                android:text="四层标注，每层可以单独关，越往上越懂她的意思：\nL1 红＋下划线＝代词，要换成名字；\nL2 橙下划线＋⚠＝话没说完（或没给结论）；\nL3 暗金 ?＝这个代词旁人猜不到指什么；\nL4 蓝绿 →＝点开看「更清楚的说法」（默认折叠，不占版面）。\n颜色区分种类，符号区分程度，尽量不写字。标注只提示，不给分、不排名。" />
+                android:text="四层标注，每层可以单独关，越往上越懂她的意思：\nL1 红字＝代词，要换成名字；\nL2 句尾橙⚠＝话没说完（或没给结论）；\nL3 暗金 ?＝这个代词旁人猜不到指什么；\nL4 蓝绿 →＝点开看「更清楚的说法」（默认折叠，不占版面）。\n颜色区分种类，符号区分程度，尽量不写字。标注只提示，不给分、不排名。\n\n⚠ 开了上面的开关却没看到标注？判定是按练习次数逐步开放的（第 5/9/13/20 次各升一级）。想现在就用，去「练习」页把「标注级别」锁到最高。" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

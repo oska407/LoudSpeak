@@ -144,6 +144,8 @@ class MainActivity : LsActivity() {
     private var lastGlowAt = 0L
     /** 过热提示（每会话一次，非阻断） */
     private var promptedHot = false
+    /** 模型缺失引导只弹一次（避免首次引导期间弹出的过期对话框反复冒出，见 onResume/onCreate 的 700ms 检查） */
+    private var noModelPrompted = false
 
     // ---- 声纹区分（§声纹）：录音时按句比对已登记声纹，命中则句首加「名字：」 ----
     private var spkEngine: SpeakerEngine? = null
@@ -226,11 +228,18 @@ class MainActivity : LsActivity() {
         updateButtons()
         idleHint()
         ensureAsrLoaded()
-        // 模型文件缺失 → 进界面后弹一次引导（自动查找 / 手动选择），不打断首帧
+        // 模型文件缺失 → 进界面后弹一次引导（自动查找 / 手动选择），不打断首帧。
+        // ⚠️ 首次引导（FirstRun）期间**不弹**：引导页自己负责装模型，否则会在引导页背后
+        //   弹出一个「没找到模型」对话框，等引导结束回到主界面时又冒出来（用户反馈的 bug）。
+        //   引导走完（firstRunDone 已为真）后若仍缺模型，由 onResume 补弹一次。
         main.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
+            if (!Prefs.firstRunDone(this)) return@postDelayed
             val (m, t) = asr.checkFiles()
-            if (!asr.available && !asrLoading && (m?.isFile != true || t?.isFile != true)) promptNoModel()
+            if (!asr.available && !asrLoading && (m?.isFile != true || t?.isFile != true)) {
+                noModelPrompted = true
+                promptNoModel()
+            }
         }, 700)
     }
 
@@ -259,8 +268,18 @@ class MainActivity : LsActivity() {
         if (::textArea.isInitialized) textArea.applySkin()   // 文字区自绘，单独刷
         if (state == "idle") {
             mode = Prefs.getMode(this); updateModeBadge()
-            // 从「设置」装完模型回来：自动补加载 + 刷新提示
-            if (sentences.isEmpty()) { ensureAsrLoaded(); idleHint() }
+            // 从「设置」/「首次引导」装完模型回来：自动补加载 + 刷新提示
+            if (sentences.isEmpty()) {
+                ensureAsrLoaded(); idleHint()
+                // 首次引导走完（firstRunDone 已为真）但模型仍缺失：补弹一次引导（最多一次）
+                if (!noModelPrompted) {
+                    val (m2, t2) = asr.checkFiles()
+                    if (!asr.available && !asrLoading && (m2?.isFile != true || t2?.isFile != true)) {
+                        noModelPrompted = true
+                        promptNoModel()
+                    }
+                }
+            }
         }
     }
 
@@ -740,16 +759,18 @@ class MainActivity : LsActivity() {
 
     // ================= ASR 结果 → 显示（§12.2 步 3–4） =================
 
-    private fun onAsrResult(res: AsrResult?, t0: Long, t1: Long, spkName: String = "") {
+    private fun onAsrResult(res: AsrResult?, t0: Long, t1: Long, spk: SpkResult = SpkResult("", true)) {
         // 声纹区分：把识别到的说话人落到这句（句首渲染「名字：」，回放也读得到）
         val text = res?.text
+        // 这人「转文字」关掉 → 整句滤过：不显示、不计入、不进历史
+        if (!spk.transcribe) return
         val s = RuleEngine.Sentence(
             index = sentences.size, tStartMs = t0, tEndMs = t1,
             text = text ?: "?", uncertain = text == null,
             take = take,
             absMs = res?.absMs(t0) ?: LongArray(0),
             absWords = res?.absWords() ?: emptyArray(),
-            speakerName = spkName
+            speakerName = spk.name
         )
         // 识别语言档位（§ASR）：非「自动」时，只留目标语种，其余整句丢弃。
         // 解码始终走自动（AsrEngine.language=""），保证检测到的语种可信；这里只按设置过滤。
@@ -797,22 +818,30 @@ class MainActivity : LsActivity() {
         }
     }
 
-    /** 给一句话的 PCM 判定说话人：命中已登记声纹返回名字，否则返回「其他」，没就绪返回空串 */
-    private fun identifySpeaker(pcm: FloatArray): String {
-        val eng = spkEngine ?: return ""
-        if (!speakerReady) return ""
-        val emb = eng.embed(pcm) ?: return ""
+    /** 说话人判定结果：name=句首要加的前缀（""=不加；"其他"=不认识）；transcribe=false=整句滤过不显示 */
+    private data class SpkResult(val name: String, val transcribe: Boolean)
+
+    /** 给一句话的 PCM 判定说话人。 */
+    private fun identifySpeaker(pcm: FloatArray): SpkResult {
+        val eng = spkEngine ?: return SpkResult("", true)
+        if (!speakerReady) return SpkResult("", true)
+        val emb = eng.embed(pcm) ?: return SpkResult("", true)
         var best = 0f
         var hit: SpeakerProfile? = null
         for (p in spkProfiles) {
             val sim = cosine(emb, p.emb)
             if (sim > best) { best = sim; hit = p }
         }
-        // 没人达到阈值 → 归「其他」（用户要求：没入录的声纹标「其他」）
-        if (hit == null || best < SPEAKER_THRESHOLD) return "其他"
-        // 这个人被「关掉标注」→ 这句不加名字。返回空串而不是「其他」：
-        // 「其他」= 不认识，「空」= 认识但这次不标，两者不能混（否则关掉的人会被当成陌生人）。
-        return if (hit.transcribe) hit.name else ""
+        val anyAnnotate = spkProfiles.any { it.annotate }
+        // 没人达到阈值 → 不认识：只要有人开了「声纹标注」就标「其他：」；否则直接纯文字（不加任何前缀）
+        if (hit == null || best < SPEAKER_THRESHOLD) {
+            return SpkResult(name = if (anyAnnotate) "其他" else "", transcribe = true)
+        }
+        // 命中已登记的人：
+        //  - transcribe=false → 这人说的整句滤过，完全不显示
+        //  - annotate=false    → 认识但这次不加名字（文字照常转写、照常标注）
+        //  - annotate=true     → 句首加「名字：」
+        return SpkResult(name = if (hit.annotate) hit.name else "", transcribe = hit.transcribe)
     }
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
@@ -1004,9 +1033,10 @@ class MainActivity : LsActivity() {
                 renderAll()          // 报告接在识别文字最后
 
                 if (sessionDir != null) saveSession(elapsedMs, exitKind = "normal")
-                val hasProblem = sentences.any { it.isProblem }
-                if (hasProblem && sessionDir != null) startReplay()
-                else showDiagnosis()
+                // ② 停止后不再自动跳进回看：回看只手动（点「播放」才进）。
+                // 总结画面是否弹出看设置（summaryEnabled，默认关）。
+                if (Prefs.summaryEnabled(this)) showDiagnosis()
+                else { state = "idle"; updateButtons(); idleHint() }
             }
         }
     }
@@ -1082,9 +1112,9 @@ class MainActivity : LsActivity() {
         btnSkipReplay.visibility = View.GONE
         // 回放拖动只在 replay 态有意义，退出后取消，避免 idle/diag 误触把波形当可拖
         wave.wf.onSeek = null
-        state = "diag"
-        updateButtons()
-        if (showDiagnosis) showDiagnosis()
+        // 回放停止后是否弹总结：看设置（默认关）。关着就回待录，想看回放点「播放」。
+        if (showDiagnosis && Prefs.summaryEnabled(this)) showDiagnosis()
+        else { state = "idle"; updateButtons(); idleHint() }
     }
 
     /** 诊断（追问卡 §9.2）：问题句 + 追问语 + 自评按钮；主按钮「再讲一次这道题」 */

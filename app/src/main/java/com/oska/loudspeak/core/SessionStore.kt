@@ -123,7 +123,7 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
             arr.put(JSONObject()
                 .put("index", s.index)
                 .put("tStartMs", s.tStartMs).put("tEndMs", s.tEndMs)
-                .put("text", if (s.uncertain) "?" else s.text)
+                .put("text", if (s.uncertain) "⋯" else s.text)
                 .put("words", JSONArray())
                 .put("pronouns", JSONArray().apply { s.pronouns.forEach { put(JSONObject().put("word", it.first).put("at", it.second)) } })
                 .put("muzzy", JSONArray().apply { s.muzzy.forEach { put(JSONObject().put("word", it.first).put("at", it.second)) } })
@@ -134,6 +134,16 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                 .put("mergePrev", s.mergePrev)  // 并回上一句的碎片
                 .put("lowVol", JSONArray().apply { s.lowVol.forEach { put(if (it) 1 else 0) } }) // 音量不达标逐字标注
                 .put("speaker", s.speakerName)   // 声纹区分：谁说的（空=未接入/没认出）
+                // ---- 大模型结果（L3 歧义 / L4 改写 / 智能追问）----
+                // 不存这三样的话，回看历史时暗金 ? 和蓝绿 → 会全部消失：回放走的是同一套
+                // Annotator.build()，但手里拿不到模型数据。null 用 JSONObject.NULL 占位。
+                .put("modelPronouns", s.modelPronouns?.let { list ->
+                    JSONArray().apply {
+                        list.forEach { p -> put(JSONObject().put("word", p.word).put("ambiguous", p.ambiguous)) }
+                    }
+                } ?: JSONObject.NULL)
+                .put("rewrite", s.rewrite ?: JSONObject.NULL)
+                .put("followUp", s.modelFollowUp ?: JSONObject.NULL)
                 .put("take", s.take))
         }
         File(dir, "transcript.json").writeText(arr.toString(2))
@@ -211,11 +221,23 @@ class SessionStore(private val ctx: Context) : SQLiteOpenHelper(ctx, "loudspeak.
                     index = o.optInt("index", i),
                     tStartMs = o.optLong("tStartMs"),
                     tEndMs = o.optLong("tEndMs"),
-                    text = if (uncertain) "?" else text,
+                    text = if (uncertain) "⋯" else text,
                     uncertain = uncertain,
                     selfMarked = o.optBoolean("selfMarked", false)
                 )
                 s.speakerName = o.optString("speaker", "")
+                // 大模型结果：旧 transcript.json 没有这几个键 → opt 返回空，回放退化成「无 L3/L4」，不崩
+                s.judge = o.optString("judge", "").takeIf { it.isNotEmpty() }
+                s.rewrite = o.optString("rewrite", "").takeIf { it.isNotEmpty() }
+                s.modelFollowUp = o.optString("followUp", "").takeIf { it.isNotEmpty() }
+                o.optJSONArray("modelPronouns")?.let { mps ->
+                    val list = ArrayList<RuleEngine.ModelPronoun>()
+                    for (j in 0 until mps.length()) {
+                        val p = mps.getJSONObject(j)
+                        list.add(RuleEngine.ModelPronoun(p.optString("word"), p.optBoolean("ambiguous")))
+                    }
+                    if (list.isNotEmpty()) s.modelPronouns = list
+                }
                 val pr = o.optJSONArray("pronouns")
                 if (pr != null) for (j in 0 until pr.length()) {
                     val p = pr.getJSONObject(j)
