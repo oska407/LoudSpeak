@@ -82,7 +82,7 @@ object Annotator {
     val C_L2     = 0xFFF5A623.toInt()   // L2 不完整句：橙
     val C_L3     = 0xFFB8860B.toInt()   // L3 指代歧义：暗金（比 L2 橙弱一档，不抢眼）
     val C_L4     = 0xFF2DA8A0.toInt()   // L4 更清楚的说法：蓝绿
-    val C_LOWVOL = 0xFF4F9BE8.toInt()   // 音量不达标：蓝（与代词红/句式橙/L4 蓝绿都不同）
+    val VOL_BLUE2 = 0xFF0A6CFF.toInt()   // 音量不达标：蓝（与代词红/句式橙/L4 蓝绿都不同）
     val C_SPEAKER = 0xFF4FA3FF.toInt()  // 声纹区分「名字：」：蓝，区别于标注色，且不缩小
 
     // 「说得顺不顺」（R12）单独一套颜色：用青蓝，避开代词红 / 句式橙，别跟现有标注打架
@@ -224,7 +224,7 @@ object Annotator {
                     }
                     for (i in s.text.indices) {
                         if (i < s.lowVol.size && s.lowVol[i] && lvMap[i] >= 0) {
-                            sb.setSpan(ColoredUnderlineSpan(C_LOWVOL), lvMap[i], lvMap[i] + 1,
+                            sb.setSpan(ColoredUnderlineSpan(0xFF0A6CFF), lvMap[i], lvMap[i] + 1,
                                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }

@@ -485,9 +485,8 @@ class SettingsActivity : LsActivity() {
                 .setPositiveButton("知道了", null)
                 .show()
         }
-        // 声纹：铺出每个人的开关，并给一个进「录入/管理」的入口（切到模型页，那里有全套）
+        // 声纹：在标注页直接铺出每个人的开关；改名/删除入口见标注页与模型页各自的「管理已登记的声纹」按钮
         rebuildSpkToggles()
-        findViewById<Button>(R.id.btnSpkManage).setOnClickListener { selectTab(4) }   // 4 = 「模型」页（声纹录入/装模型都在那）
     }
 
     /**
@@ -1034,6 +1033,7 @@ class SettingsActivity : LsActivity() {
         btnSpkLoad.setOnClickListener { loadSpeakerDialog() }
         btnSpkAdd.setOnClickListener { addSpeakerFlow() }
         btnSpkManage.setOnClickListener { manageSpeakers() }
+        findViewById<Button>(R.id.btnSpkManageModel)?.setOnClickListener { manageSpeakers() }
         btnSpkDelModel.setOnClickListener { manageSpkModels() }
         btnAsrDel.setOnClickListener { deleteAsrModel() }
         findViewById<Button>(R.id.btnSpkPickFile)?.setOnClickListener { pickSpkFile() }

@@ -122,7 +122,7 @@
                 android:text="＋ 添加声纹（录 6 秒）" />
 
             <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnSpkManage"
+                android:id="@+id/btnSpkManageModel"
                 style="@style/SetBtn"
                 android:text="管理已登记的声纹（改名 / 删除 / 标注开关）" />
 
